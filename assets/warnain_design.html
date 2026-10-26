@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WarnaIn — Studio Pewarnaan Foto</title>
+<link href="https://fonts.googleapis.com/css2?family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#E8E7E2;--sheet:#F2F1ED;--ink:#000;--soft:#4A4A47;--rule:#000;--hair:#B9B8B2;--serif:'Old Standard TT',Georgia,serif;--sans:'Plus Jakarta Sans',system-ui,sans-serif}
+*{box-sizing:border-box;margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6}
+.page{max-width:1180px;margin:0 auto;padding:24px 28px 48px;background:var(--sheet);min-height:100vh;border-left:1px solid var(--hair);border-right:1px solid var(--hair)}
+.dateline{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--soft);padding-bottom:8px}
+.masthead{text-align:center;border-top:4px solid var(--rule);border-bottom:1px solid var(--rule);padding:10px 0 6px}
+.masthead h1{font-family:var(--serif);font-weight:700;font-size:clamp(3.2rem,10vw,6.5rem);line-height:1;letter-spacing:-.02em}
+.masthead p{font-family:var(--serif);font-style:italic;font-size:1.05rem;color:var(--soft);padding-bottom:4px}
+nav{display:flex;justify-content:center;gap:0;border-bottom:4px double var(--rule);margin-bottom:28px;flex-wrap:wrap}
+nav a{padding:10px 22px;font-weight:600;font-size:14px;color:var(--soft);text-decoration:none;border-left:1px solid var(--hair)}
+nav a:first-child{border-left:0}
+nav a.on{color:var(--ink);background:var(--paper)}
+nav a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.layout{display:grid;grid-template-columns:270px 1fr;gap:0}
+aside{padding-right:24px;border-right:1px solid var(--rule)}
+aside h2,.col h2{font-family:var(--serif);font-size:1.3rem;border-bottom:1px solid var(--rule);padding-bottom:4px;margin-bottom:14px}
+.drop{display:block;border:1.5px dashed var(--ink);padding:22px 14px;text-align:center;font-weight:600;cursor:pointer;margin-bottom:6px;background:var(--paper)}
+.drop small{display:block;font-weight:400;color:var(--soft);font-size:12.5px}
+.drop:hover{background:#DEDDD7}
+.field{margin:18px 0}
+.field label{display:flex;justify-content:space-between;font-weight:600;font-size:13.5px;margin-bottom:6px}
+.field label span{font-weight:400;color:var(--soft)}
+select{width:100%;padding:8px;border:1px solid var(--ink);background:var(--sheet);font:inherit;font-size:13.5px;border-radius:0}
+input[type=range]{width:100%;accent-color:#000}
+.check{display:flex;gap:8px;align-items:center;font-size:13.5px}
+.btn{display:block;width:100%;padding:12px;margin-top:22px;background:var(--ink);color:var(--sheet);font:600 14px var(--sans);border:0;cursor:pointer}
+.btn:hover{background:#333}
+.lead{padding-left:28px}
+.lead h2{font-family:var(--serif);font-size:clamp(2rem,4.4vw,3.2rem);line-height:1.08;font-weight:700;letter-spacing:-.01em}
+.lead .deck{font-family:var(--serif);font-style:italic;font-size:1.15rem;color:var(--soft);margin:8px 0 16px;max-width:60ch}
+figure{margin:0}
+.cmp{position:relative;aspect-ratio:3/2;overflow:hidden;border:1px solid var(--ink);background:#999;user-select:none}
+.cmp svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.cmp .before svg{filter:grayscale(1) contrast(1.05)}
+.cmp .before:after{content:"";position:absolute;inset:0;background:radial-gradient(circle,rgba(0,0,0,.18) 0.6px,transparent 1px) 0 0/4px 4px;mix-blend-mode:multiply}
+.cmp .layer{position:absolute;inset:0}
+.cmp .after{clip-path:inset(0 0 0 50%)}
+.cmp .tag{position:absolute;bottom:10px;padding:3px 10px;background:var(--sheet);border:1px solid var(--ink);font-size:12.5px;font-weight:600;z-index:3}
+.tag.l{left:10px}.tag.r{right:10px}
+.bar{position:absolute;top:0;bottom:0;left:50%;width:2px;background:var(--sheet);box-shadow:0 0 0 1px var(--ink);z-index:2;pointer-events:none}
+.bar:after{content:"⇆";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;background:var(--sheet);border:1.5px solid var(--ink);display:grid;place-items:center;font-size:17px}
+.cmp input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:ew-resize;z-index:4;margin:0}
+figcaption{font-family:var(--serif);font-style:italic;font-size:.95rem;color:var(--soft);padding:6px 0 0;border-bottom:1px solid var(--hair);padding-bottom:10px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin:22px 0}
+.stat{padding:12px 14px;border-left:1px solid var(--hair)}
+.stat:first-child{border-left:0;padding-left:0}
+.stat b{display:block;font-family:var(--serif);font-size:2rem;line-height:1.1}
+.stat span{font-size:12.5px;color:var(--soft)}
+.cols{display:grid;grid-template-columns:1fr 1fr;column-gap:0}
+.col{padding-right:24px}
+.col+.col{padding:0 0 0 24px;border-left:1px solid var(--hair)}
+.col p,.col li{font-family:var(--serif);font-size:1.02rem;line-height:1.7;max-width:62ch}
+.col p+p{margin-top:10px}
+.col p:first-of-type:first-letter{font-size:3.4rem;float:left;line-height:.85;padding:4px 8px 0 0;font-weight:700}
+.col ul{padding-left:18px}
+.foot{margin-top:34px;border-top:4px double var(--rule);padding-top:8px;font-size:12.5px;color:var(--soft);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+@media(max-width:860px){.layout{grid-template-columns:1fr}aside{border-right:0;padding:0 0 22px;border-bottom:1px solid var(--rule);margin-bottom:22px}.lead{padding-left:0}.stats{grid-template-columns:repeat(2,1fr)}.stat:nth-child(3){border-left:0;padding-left:0}.cols{grid-template-columns:1fr}.col{padding-right:0}.col+.col{padding:18px 0 0;border-left:0;border-top:1px solid var(--hair);margin-top:18px}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="dateline"><span>Senin, 26 Oktober 2026</span><span>Model aktif di GPU · Ruang warna CIE L*a*b*</span></div>
+  <header class="masthead">
+    <h1>WarnaIn</h1>
+    <p>Harian pewarnaan foto hitam-putih berbasis deep learning</p>
+  </header>
+  <nav aria-label="Bagian">
+    <a href="#" class="on">Studio pewarnaan</a>
+    <a href="#">Eksperimen degradasi &amp; metrik</a>
+    <a href="#">Inspeksi ruang warna</a>
+  </nav>
+
+  <div class="layout">
+    <aside>
+      <h2>Unggah foto</h2>
+      <label class="drop" tabindex="0">Tarik foto ke sini atau pilih file<small>JPG, PNG, atau WEBP</small><input type="file" hidden></label>
+      <div class="check" style="margin-top:10px;font-size:13px;color:var(--soft)">Belum ada foto? Coba sampel klasik atau dataset COCO.</div>
+
+      <div class="field" style="margin-top:26px">
+        <h2 style="font-size:1.1rem">Pengaturan</h2>
+        <label for="m">Arsitektur model</label>
+        <select id="m"><option>Ensemble Pro (U-Net + Semantic Prior)</option><option>CIE Lab U-Net</option><option>Semantic Chrominance Prior</option></select>
+      </div>
+      <div class="field"><label for="vib">Intensitas warna <span id="vv">1,15</span></label><input id="vib" type="range" min="0.6" max="1.8" step="0.05" value="1.15"></div>
+      <div class="field"><label for="wr">Suhu warna <span id="wv">netral</span></label><input id="wr" type="range" min="-30" max="30" step="2" value="0"></div>
+      <div class="field"><label class="check"><input type="checkbox"> Pertajam kontras (CLAHE)</label></div>
+      <div class="field"><label for="rs">Resolusi proses <span>256 px</span></label><input id="rs" type="range" min="1" max="3" step="1" value="1"></div>
+      <button class="btn">Unduh hasil (PNG)</button>
+    </aside>
+
+    <main class="lead">
+      <h2>Foto lama, warna baru</h2>
+      <p class="deck">Geser garis untuk membandingkan foto asli dengan hasil pewarnaan. Detail tepi tetap sama karena hanya kanal warna yang diprediksi.</p>
+      <figure>
+        <div class="cmp" id="cmp">
+          <div class="layer before">
+            <svg viewBox="0 0 600 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><use href="#scene"/></svg>
+          </div>
+          <div class="layer after" id="after">
+            <svg viewBox="0 0 600 400" preserveAspectRatio="xMidYMid slice" id="afterSvg" aria-hidden="true"><use href="#scene"/></svg>
+          </div>
+          <span class="tag l">Hitam-putih</span><span class="tag r">Hasil WarnaIn</span>
+          <div class="bar" id="bar"></div>
+          <input type="range" min="0" max="100" value="50" id="pos" aria-label="Geser perbandingan sebelum dan sesudah">
+        </div>
+        <figcaption>Contoh ilustrasi. Ganti dengan foto Anda untuk melihat hasil sebenarnya.</figcaption>
+      </figure>
+
+      <div class="stats" aria-label="Metrik">
+        <div class="stat"><b>28,4</b><span>PSNR (dB)</span></div>
+        <div class="stat"><b>0,91</b><span>SSIM</span></div>
+        <div class="stat"><b>6,2</b><span>MAE</span></div>
+        <div class="stat"><b>142</b><span>Waktu proses (ms)</span></div>
+      </div>
+
+      <div class="cols">
+        <section class="col">
+          <h2>Mengapa CIE Lab?</h2>
+          <p>Ruang warna RGB mencampur kecerahan dan warna di ketiga kanalnya. CIE Lab memisahkannya, sehingga struktur foto hitam-putih bisa dipertahankan utuh sementara jaringan hanya menebak warnanya.</p>
+          <p>Kanal L* menyimpan tepi, tekstur, dan bayangan asli. Kanal a* dan b* adalah hijau–merah dan biru–kuning yang diprediksi model.</p>
+        </section>
+        <section class="col">
+          <h2>Cara kerjanya</h2>
+          <ul>
+            <li>Kanal L* diambil dari foto pada resolusi penuh.</li>
+            <li>U-Net memprediksi a* dan b* pada ukuran proses yang dipilih.</li>
+            <li>Hasil prediksi diperbesar, lalu digabung kembali dengan L* asli.</li>
+          </ul>
+        </section>
+      </div>
+    </main>
+  </div>
+  <div class="foot"><span>WarnaIn, proyek deep learning pewarnaan citra</span><span>Binus University</span></div>
+</div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3F7FC4"/><stop offset=".7" stop-color="#F6B66B"/></linearGradient>
+  <g id="scene">
+    <rect width="600" height="400" fill="url(#sky)"/>
+    <circle cx="440" cy="190" r="46" fill="#FFE08A"/>
+    <path d="M0 250 Q150 170 300 235 T600 220 V400 H0Z" fill="#4E7A3A"/>
+    <path d="M0 300 Q200 250 380 300 T600 285 V400 H0Z" fill="#2F5E2A"/>
+    <rect y="330" width="600" height="70" fill="#3C8DBC"/>
+    <rect x="120" y="215" width="110" height="80" fill="#E6D3A8"/>
+    <path d="M110 218 L175 165 L240 218Z" fill="#B3382C"/>
+    <rect x="160" y="250" width="26" height="45" fill="#6B3E26"/>
+    <rect x="132" y="235" width="20" height="20" fill="#7FB6E0"/>
+    <rect x="200" y="235" width="20" height="20" fill="#7FB6E0"/>
+  </g>
+</defs></svg>
+
+<script>
+const pos=document.getElementById('pos'),after=document.getElementById('after'),bar=document.getElementById('bar');
+pos.addEventListener('input',()=>{after.style.clipPath='inset(0 0 0 '+pos.value+'%)';bar.style.left=pos.value+'%'});
+const vib=document.getElementById('vib'),wr=document.getElementById('wr'),afterSvg=document.getElementById('afterSvg');
+function tone(){const v=+vib.value,w=+wr.value;document.getElementById('vv').textContent=v.toFixed(2).replace('.',',');
+document.getElementById('wv').textContent=w===0?'netral':(w>0?'hangat':'dingin');
+afterSvg.style.filter='saturate('+v+') hue-rotate('+(-w*0.4)+'deg)'}
+vib.addEventListener('input',tone);wr.addEventListener('input',tone);
+</script>
+</body>
+</html>

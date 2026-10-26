@@ -1,0 +1,34 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyTorch checkpoints and model weights (>100MB exceeds GitHub limit)
+checkpoints/*.pth
+checkpoints/*.pt
+*.pth
+*.pt
+
+# Datasets
+data/raw/
+data/splits/
+*.zip
+*.tar.gz
+*.crdownload
+
+# Environments and IDE
+.env
+.venv
+env/
+venv/
+ENV/
+.vscode/
+.idea/
+
+# Temporary test images
+tes.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
