@@ -1,7 +1,8 @@
 """
 WarnaIn - Utility Functions
-Handles high-precision float32 CIE Lab <-> RGB conversions, tensor transformations,
-saturation degradation experiments, and quantitative metrics (PSNR, SSIM, MAE).
+Handles high-precision float32 CIE Lab <-> RGB conversions, aspect-ratio-aware
+tensor transformations, saturation degradation experiments, category-specific
+chrominance calibration, and quantitative metrics (PSNR, SSIM, MAE).
 """
 
 import numpy as np
@@ -51,9 +52,7 @@ def lab_to_rgb(L_norm: np.ndarray, ab_norm: np.ndarray) -> np.ndarray:
 
 
 def tensor_to_rgb(L_tensor: torch.Tensor, ab_tensor: torch.Tensor) -> np.ndarray:
-    """
-    Converts PyTorch tensors back to RGB numpy array.
-    """
+    """Converts PyTorch tensors back to RGB numpy array."""
     if L_tensor.ndim == 4:
         L_tensor = L_tensor.squeeze(0)
     if ab_tensor.ndim == 4:
@@ -68,9 +67,12 @@ def tensor_to_rgb(L_tensor: torch.Tensor, ab_tensor: torch.Tensor) -> np.ndarray
 def image_to_tensor(
     image: Union[np.ndarray, Image.Image],
     target_size: Optional[Tuple[int, int]] = (256, 256),
+    preserve_aspect: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[int, int]]:
     """
     Preprocesses an input image (RGB) into normalized L and ab PyTorch tensors.
+    When preserve_aspect=True, scales the shorter side to target_size[0] (rounded to multiple of 8)
+    so portrait/landscape anatomy is never squished.
     """
     if isinstance(image, Image.Image):
         original_size = image.size  # (W, H)
@@ -80,7 +82,21 @@ def image_to_tensor(
         img_np = image.copy()
 
     if target_size is not None:
-        img_np = cv2.resize(img_np, target_size, interpolation=cv2.INTER_AREA)
+        orig_w, orig_h = original_size
+        if preserve_aspect and orig_w > 0 and orig_h > 0:
+            short_target = min(target_size[0], target_size[1])
+            scale = short_target / float(min(orig_w, orig_h))
+            new_w = max(8, int(round((orig_w * scale) / 8.0) * 8))
+            new_h = max(8, int(round((orig_h * scale) / 8.0) * 8))
+            # Cap maximum dimension to prevent excessive CPU latency
+            max_dim = short_target * 2
+            if new_w > max_dim or new_h > max_dim:
+                cap_scale = max_dim / float(max(new_w, new_h))
+                new_w = max(8, int(round((new_w * cap_scale) / 8.0) * 8))
+                new_h = max(8, int(round((new_h * cap_scale) / 8.0) * 8))
+            img_np = cv2.resize(img_np, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        else:
+            img_np = cv2.resize(img_np, target_size, interpolation=cv2.INTER_AREA)
 
     L, ab = rgb_to_lab(img_np)
 
@@ -90,10 +106,100 @@ def image_to_tensor(
     return L_tensor, ab_tensor, original_size
 
 
+def apply_category_chroma_prior(
+    L_norm: np.ndarray,
+    ab_norm: np.ndarray,
+    category: str = "general",
+) -> np.ndarray:
+    """
+    Applies domain-specific CIE Lab chrominance refinement based on the selected semantic category:
+    - 'general': Unmodified baseline prediction.
+    - 'animals': Suppresses false blue/cyan clothing hallucinations in shadowed fur/foreground,
+                 restores warm organic fur/skin tones and delicate pink nose/ear chrominance.
+    - 'architecture': Enhances crisp sky clarity behind structures, restores natural warmth to
+                      masonry/brick/wood/stone facades, and balances neutral concrete/metal highlights.
+    - 'landscapes': Enhances sky-water-foliage chromatic separation and natural horizon gradients.
+    - 'portraits': Calibrates skin-tone locus in CIE a*b* and prevents cold/greenish cast on skin.
+    - 'objects': Boosts chromatic contrast and suppresses muddy mid-tone desaturation on products.
+    """
+    cat = (category or "general").lower()
+    if cat == "general":
+        return ab_norm
+
+    lum = L_norm[:, :, 0] if L_norm.ndim == 3 else L_norm
+    h, w = lum.shape
+    a = ab_norm[:, :, 0].copy()
+    b = ab_norm[:, :, 1].copy()
+
+    if cat == "animals":
+        # 1. Suppress false negative b* (blue/cyan clothing hallucination) on fur & hands
+        false_blue_mask = b < 0.0
+        b[false_blue_mask] = b[false_blue_mask] * 0.15 + 0.04 * (1.0 - lum[false_blue_mask])
+
+        # 2. Warm organic fur & skin locus in mid-to-dark luminance (0.12 .. 0.72)
+        fur_mask = np.clip(1.0 - np.abs(lum - 0.45) / 0.38, 0.0, 1.0)
+        b = b + fur_mask * 0.08
+        a = a + fur_mask * 0.035
+
+        # 3. Delicate pink/warmth preservation on mid-bright central facial features (nose/ears)
+        yy, xx = np.ogrid[:h, :w]
+        center_weight = np.exp(-(((yy - h * 0.42) / (h * 0.28)) ** 2 + ((xx - w * 0.5) / (w * 0.28)) ** 2))
+        nose_tone = (lum > 0.45) & (lum < 0.82)
+        a = a + center_weight * nose_tone * 0.045
+
+        # 4. Keep bright white fur (L* > 0.82) clean and neutral
+        white_fur = np.clip((lum - 0.80) / 0.20, 0.0, 1.0)
+        a = a * (1.0 - 0.45 * white_fur)
+        b = b * (1.0 - 0.35 * white_fur)
+
+    elif cat == "architecture":
+        # 1. Clean sky clarity: boost natural blue/cyan for open sky behind buildings
+        sky_blue = (b < -0.02) & (lum > 0.35)
+        b[sky_blue] = b[sky_blue] * 1.15
+
+        # 2. Natural warmth for masonry, brick, wood, and stone facade midtones (0.20 < lum < 0.75)
+        facade_lum = np.clip(1.0 - np.abs(lum - 0.48) / 0.35, 0.0, 1.0)
+        warm_facade = (a > -0.02) & (b > -0.02)
+        a[warm_facade] = a[warm_facade] + facade_lum[warm_facade] * 0.035
+        b[warm_facade] = b[warm_facade] + facade_lum[warm_facade] * 0.045
+
+        # 3. Suppress muddy green/purple casts on neutral highlights/concrete (lum > 0.78)
+        bright_neutral = lum > 0.78
+        a[bright_neutral] = a[bright_neutral] * 0.85
+        b[bright_neutral] = b[bright_neutral] * 0.90
+
+    elif cat == "landscapes":
+        # Enhance natural sky/water blues (b* < 0) and foliage greens (a* < 0, b* > 0)
+        blue_mask = b < -0.02
+        b[blue_mask] = b[blue_mask] * 1.18
+        green_mask = (a < 0.0) & (b > 0.0)
+        a[green_mask] = a[green_mask] * 1.15
+        b[green_mask] = b[green_mask] * 1.12
+
+    elif cat == "portraits":
+        # Suppress cold/greenish cast on skin and gently reinforce warm skin-tone locus
+        cold_mask = b < 0.0
+        b[cold_mask] = b[cold_mask] * 0.55
+        green_cast = a < -0.02
+        a[green_cast] = a[green_cast] * 0.60
+        skin_lum = np.clip(1.0 - np.abs(lum - 0.58) / 0.32, 0.0, 1.0)
+        a = a + skin_lum * 0.04
+        b = b + skin_lum * 0.05
+
+    elif cat == "objects":
+        # Non-linear chroma contrast expansion to counter regression-to-the-mean desaturation
+        chroma_mag = np.sqrt(a ** 2 + b ** 2) + 1e-6
+        boost = np.power(np.clip(chroma_mag / 0.5, 0.0, 2.0), -0.22)
+        boost = np.clip(boost, 1.0, 1.45)
+        a = a * boost
+        b = b * boost
+
+    return np.clip(np.stack([a, b], axis=2), -1.0, 1.0).astype(np.float32)
+
+
 def degrade_saturation(rgb_image: np.ndarray, saturation_factor: float = 0.0) -> np.ndarray:
     """
     Degrades color saturation of an RGB image to simulate faded vintage photos or grayscale.
-    Uses CIE Lab chrominance scaling so luminance (L*) stays 100% identical.
     """
     saturation_factor = float(np.clip(saturation_factor, 0.0, 1.0))
     if saturation_factor >= 0.999:
@@ -105,10 +211,7 @@ def degrade_saturation(rgb_image: np.ndarray, saturation_factor: float = 0.0) ->
 
 
 def enhance_luminance_contrast(rgb_or_gray: np.ndarray, clip_limit: float = 1.5) -> np.ndarray:
-    """
-    Applies subtle CLAHE (Contrast Limited Adaptive Histogram Equalization)
-    on the L channel for old/faded vintage photos.
-    """
+    """Applies subtle CLAHE on the L channel."""
     if rgb_or_gray.ndim == 2:
         rgb = cv2.cvtColor(rgb_or_gray, cv2.COLOR_GRAY2RGB)
     else:

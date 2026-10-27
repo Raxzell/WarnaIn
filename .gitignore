@@ -10,8 +10,7 @@ checkpoints/*.pt
 *.pt
 
 # Datasets
-data/raw/
-data/splits/
+data/
 *.zip
 *.tar.gz
 *.crdownload
@@ -25,8 +24,10 @@ ENV/
 .vscode/
 .idea/
 
-# Temporary test images
+# Temporary test images & extra assets
 tes.*
+assets/sample_images/jadul*
+assets/sample_images/pexels*
 
 # OS generated files
 .DS_Store

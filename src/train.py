@@ -13,7 +13,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.dataset import ColorizationDataset
+from src.dataset import ColorizationDataset, VALID_CATEGORIES
 from src.model import ResNetUNetColorizer
 from src.utils import calculate_psnr, calculate_ssim, tensor_to_rgb
 
@@ -110,18 +110,22 @@ def run_training(args):
     os.makedirs(args.checkpoint_dir, exist_ok=True)
 
     # 1. Dataset & DataLoaders
+    category = getattr(args, "category", "general")
+    print(f"[INFO] Category mode: '{category}'")
     train_dataset = ColorizationDataset(
         image_dir=args.train_dir,
         image_size=(args.img_size, args.img_size),
         is_training=True,
         degrade_prob=args.degrade_prob,
-        max_samples=args.max_samples if args.max_samples > 0 else None
+        max_samples=args.max_samples if args.max_samples > 0 else None,
+        category=category,
     )
     val_dataset = ColorizationDataset(
         image_dir=args.val_dir,
         image_size=(args.img_size, args.img_size),
         is_training=False,
-        max_samples=max(50, args.max_samples // 5) if args.max_samples > 0 else None
+        max_samples=max(50, args.max_samples // 5) if args.max_samples > 0 else None,
+        category=category,
     )
 
     if len(train_dataset) == 0:
@@ -175,9 +179,11 @@ def run_training(args):
         if is_best:
             best_val_loss = val_loss
             patience_counter = 0
-            best_path = os.path.join(args.checkpoint_dir, "best_model.pth")
+            ckpt_filename = "best_model.pth" if category == "general" else f"best_model_{category}.pth"
+            best_path = os.path.join(args.checkpoint_dir, ckpt_filename)
             torch.save({
                 "epoch": epoch,
+                "category": category,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "val_loss": val_loss,
@@ -199,6 +205,13 @@ if __name__ == "__main__":
     parser.add_argument("--train_dir", type=str, default="data/splits/train")
     parser.add_argument("--val_dir", type=str, default="data/splits/val")
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints")
+    parser.add_argument(
+        "--category",
+        type=str,
+        default="general",
+        choices=list(VALID_CATEGORIES),
+        help="Semantic category to train on ('general' uses all categories)",
+    )
     parser.add_argument("--backbone", type=str, default="resnet18", choices=["resnet18", "resnet34"])
     parser.add_argument("--pretrained", action="store_true", default=True)
     parser.add_argument("--img_size", type=int, default=256)

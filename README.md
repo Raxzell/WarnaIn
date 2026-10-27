@@ -12,6 +12,7 @@
 ## 🌟 Key Highlights
 
 * **CIE $L^*a^*b^*$ Color Space Pipeline:** Decouples luminance ($L^*$) from chrominance ($a^*, b^*$), ensuring that 100% of photographic edges, textures, and fine structural details are preserved with zero contour distortion or blur.
+* **6-Category Semantic Colorization System:** Supports `general` (all-domain) alongside 5 specialized semantic categories (`animals/`, `architecture/`, `landscapes/`, `portraits/`, and `objects/`) mapped from official COCO 2017 instance and caption annotations, coupled with aspect-ratio-preserving inference and category-aware CIE $L^*a^*b^*$ chrominance calibration.
 * **Aspect-Ratio Aware Before–After Comparison Slider:** Smooth touch-and-drag split canvas powered by CSS `clip-path` with halftone print overlay and custom rectangular editorial badges.
 * **Saturation Degradation Experimentation:** Real-time color restoration testing across user-controlled degradation levels (0% pure grayscale to 100% original saturation) with live quantitative evaluation:
   * **PSNR (Peak Signal-to-Noise Ratio):** Measures reconstruction fidelity in decibels (dB).
@@ -71,8 +72,10 @@ Standard RGB color spaces entangle illumination brightness with color hues acros
 ```text
 WarnaIn/
 ├── data/
+│   ├── annotations/          # COCO 2017 instances & captions JSON annotations
 │   ├── raw/                  # Raw COCO 2017 validation dataset (5,000 images)
-│   └── splits/               # Generated splits: train/ (80%), val/ (10%), test/ (10%)
+│   └── splits/               # Categorized splits: train/ (80%), val/ (10%), test/ (10%)
+│       └── {train,val,test}/{animals,architecture,landscapes,portraits,objects}/
 ├── src/
 │   ├── __init__.py
 │   ├── dataset.py            # PyTorch Dataset, CIE Lab transforms, augmentations, and split builder
@@ -126,24 +129,28 @@ Open **[http://localhost:8501](http://localhost:8501)** in your web browser. The
 
 ## 📊 Dataset & Model Training (Optional)
 
-The baseline dataset is the **COCO 2017 Validation Set** (5,000 images, ~800 MB):
+The baseline dataset is the **COCO 2017 Validation Set** (5,000 images, ~800 MB) paired with **COCO 2017 Train/Val Annotations**:
 1. **Download and Extract:**
-   Download [COCO 2017 Val](http://images.cocodataset.org/zips/val2017.zip) and extract images into `data/raw/val2017`.
-2. **Split Dataset:**
-   Generate standard 80% Train, 10% Validation, and 10% Test splits:
+   * Download [COCO 2017 Val Images](http://images.cocodataset.org/zips/val2017.zip) and extract into `data/raw/val2017`.
+   * Download [COCO 2017 Train/Val Annotations](http://images.cocodataset.org/annotations/annotations_trainval2017.zip) and extract `instances_val2017.json` and `captions_val2017.json` into `data/annotations/`.
+2. **Split & Categorize Dataset:**
+   Automatically classify all 5,000 images into `animals/`, `architecture/`, `landscapes/`, `portraits/`, and `objects/` across 80% Train, 10% Validation, and 10% Test splits:
    ```bash
-   python -m src.dataset --raw_dir data/raw/val2017 --splits_dir data/splits
+   python -m src.dataset --raw_dir data/raw/val2017 --splits_dir data/splits --annotations_dir data/annotations
    ```
-3. **Train Model:**
-   Train the ResNet U-Net model with Smooth L1 + MSE loss:
+3. **Train Model (General or Category-Specific):**
+   Train the ResNet U-Net model on all categories (`general`) or a specific semantic category (`animals`, `architecture`, `landscapes`, `portraits`, `objects`):
    ```bash
-   python -m src.train --train_dir data/splits/train --val_dir data/splits/val --epochs 25 --batch_size 16 --device cuda
+   # General training (all 4,000 train images -> checkpoints/best_model.pth)
+   python -m src.train --category general --epochs 25 --batch_size 16 --device cuda
+
+   # Category-specific training (e.g., animals -> checkpoints/best_model_animals.pth)
+   python -m src.train --category animals --epochs 25 --batch_size 16 --device cuda
    ```
-   *(Best model checkpoint is automatically saved to `checkpoints/best_model.pth`)*.
 4. **Evaluate Test Set:**
-   Benchmark quantitative performance across test images:
+   Benchmark quantitative performance across all test images or per category:
    ```bash
-   python -m src.evaluate --model_path checkpoints/best_model.pth --test_dir data/splits/test
+   python -m src.evaluate --model_path checkpoints/best_model.pth --test_dir data/splits/test --category general
    ```
 
 ---

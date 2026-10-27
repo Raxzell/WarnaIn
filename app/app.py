@@ -24,11 +24,13 @@ from PIL import Image
 import streamlit as st
 import torch
 
+from src.dataset import VALID_CATEGORIES, CATEGORY_SUBFOLDERS
 from src.model import build_colorizer
 from src.utils import (
     rgb_to_lab,
     lab_to_rgb,
     image_to_tensor,
+    apply_category_chroma_prior,
     degrade_saturation,
     enhance_luminance_contrast,
     calculate_psnr,
@@ -408,12 +410,15 @@ def colorize_image(
     warmth_deg: float,
     apply_clahe: bool,
     device: str,
+    category: str = "general",
 ) -> tuple:
     """
-    Full-resolution CIE Lab colorization:
+    Full-resolution CIE Lab colorization with aspect-ratio preservation
+    and semantic category chrominance calibration:
     - Extracts full-resolution L* channel from input.
-    - Predicts a* and b* at target_size.
-    - Upsamples predicted a* and b* to original image dimensions and merges with L*.
+    - Predicts a* and b* preserving aspect ratio around target_size.
+    - Upsamples predicted a* and b* to original image dimensions, applies
+      category chrominance prior, and merges with full-res L*.
     """
     start_time = time.time()
     working_img = enhance_luminance_contrast(rgb_or_gray) if apply_clahe else rgb_or_gray
@@ -422,19 +427,25 @@ def colorize_image(
 
     if model is not None:
         L_orig, _ = rgb_to_lab(working_img)
-        L_tensor, _, _ = image_to_tensor(working_img, target_size=target_size)
+        L_tensor, _, _ = image_to_tensor(
+            working_img,
+            target_size=target_size,
+            preserve_aspect=True,
+        )
         L_tensor = L_tensor.to(device)
 
         with torch.no_grad():
             pred_ab = model(L_tensor)
 
         pred_ab_np = pred_ab.squeeze(0).cpu().numpy().transpose(1, 2, 0)
-        a_chan = pred_ab_np[:, :, 0] * vibrancy + (warmth * 0.12)
-        b_chan = pred_ab_np[:, :, 1] * vibrancy + (warmth * 0.14)
+        ab_full = cv2.resize(pred_ab_np, (orig_w, orig_h), interpolation=cv2.INTER_CUBIC)
+        ab_calibrated = apply_category_chroma_prior(L_orig, ab_full, category=category)
+
+        a_chan = ab_calibrated[:, :, 0] * vibrancy + (warmth * 0.12)
+        b_chan = ab_calibrated[:, :, 1] * vibrancy + (warmth * 0.14)
         ab_adjusted = np.clip(np.stack([a_chan, b_chan], axis=2), -1.0, 1.0).astype(np.float32)
 
-        ab_full = cv2.resize(ab_adjusted, (orig_w, orig_h), interpolation=cv2.INTER_CUBIC)
-        final_rgb = lab_to_rgb(L_orig, ab_full)
+        final_rgb = lab_to_rgb(L_orig, ab_adjusted)
         latency = (time.time() - start_time) * 1000.0
         return final_rgb, latency
     else:
@@ -474,20 +485,44 @@ tab_studio, tab_exp, tab_inspect = st.tabs([
     "Inspeksi ruang warna",
 ])
 
-# Discover Sample & COCO Dataset Paths
+# Discover Sample & Categorized COCO Dataset Paths
 sample_dir = os.path.join(PROJECT_ROOT, "assets", "sample_images")
 splits_test_dir = os.path.join(PROJECT_ROOT, "data", "splits", "test")
 raw_val_dir = os.path.join(PROJECT_ROOT, "data", "raw", "val2017")
 coco_test_dir = splits_test_dir if os.path.exists(splits_test_dir) else raw_val_dir
-coco_images = (
-    sorted([
-        os.path.join(coco_test_dir, f)
-        for f in os.listdir(coco_test_dir)
-        if f.lower().endswith((".jpg", ".jpeg", ".png"))
-    ])
-    if os.path.exists(coco_test_dir)
-    else []
-)
+
+
+def get_coco_images_by_category(base_dir: str, category: str = "general") -> list:
+    if not os.path.exists(base_dir):
+        return []
+    valid_exts = (".jpg", ".jpeg", ".png")
+    if category != "general":
+        cat_dir = os.path.join(base_dir, category)
+        if os.path.isdir(cat_dir):
+            return sorted([
+                os.path.join(cat_dir, f)
+                for f in os.listdir(cat_dir)
+                if f.lower().endswith(valid_exts)
+            ])
+    collected = []
+    for root, _, files in os.walk(base_dir):
+        for f in files:
+            if f.lower().endswith(valid_exts):
+                collected.append(os.path.join(root, f))
+    return sorted(collected)
+
+
+coco_images_all = get_coco_images_by_category(coco_test_dir, "general")
+
+CATEGORY_LABELS = {
+    "Umum (General)": "general",
+    "Hewan & Satwa (Animals)": "animals",
+    "Arsitektur & Bangunan (Architecture)": "architecture",
+    "Alam & Pemandangan (Landscapes)": "landscapes",
+    "Potret & Manusia (Portraits)": "portraits",
+    "Objek & Produk (Objects)": "objects",
+}
+CATEGORY_DISPLAY_NAMES = {v: k for k, v in CATEGORY_LABELS.items()}
 
 
 # ==========================================
@@ -504,6 +539,18 @@ with tab_studio:
             key="main_uploader",
             label_visibility="collapsed",
         )
+
+        chosen_cat_label = st.selectbox(
+            "Kategori gambar",
+            options=list(CATEGORY_LABELS.keys()),
+            index=0,
+            help="Pilih 'Umum (General)' untuk semua jenis foto, atau pilih kategori spesifik agar kalibrasi krominansi menyesuaikan karakter subjek.",
+        )
+        selected_category = CATEGORY_LABELS[chosen_cat_label]
+        coco_images = get_coco_images_by_category(coco_test_dir, selected_category)
+        if not coco_images:
+            coco_images = coco_images_all
+
         st.markdown(
             '<div style="margin-top:6px;margin-bottom:8px;font-size:13px;color:var(--soft)">Belum ada foto? Coba sampel klasik atau dataset COCO.</div>',
             unsafe_allow_html=True,
@@ -515,7 +562,8 @@ with tab_studio:
             "Sampel: Portrait Klasik": os.path.join(sample_dir, "vintage_portrait.jpg"),
         }
         if coco_images:
-            fallback_options["Dataset COCO 2017 (500 Citra)"] = "COCO_RANDOM"
+            cat_tag = "Semua" if selected_category == "general" else selected_category.capitalize()
+            fallback_options[f"Dataset COCO ({cat_tag} · {len(coco_images)} Citra)"] = "COCO_RANDOM"
 
         selected_fallback = st.selectbox(
             "Koleksi sampel",
@@ -543,7 +591,7 @@ with tab_studio:
             "Intensitas warna",
             min_value=0.60,
             max_value=1.80,
-            value=1.15,
+            value=1.05,
             step=0.05,
         )
         warmth_deg = st.slider(
@@ -569,19 +617,30 @@ with tab_studio:
         caption_text = "Contoh ilustrasi. Ganti dengan foto Anda untuk melihat hasil sebenarnya."
         if uploaded_file is not None:
             active_rgb = np.array(Image.open(uploaded_file).convert("RGB"))
-            caption_text = f"Citra unggahan: {uploaded_file.name} ({active_rgb.shape[1]}×{active_rgb.shape[0]} px)."
+            caption_text = (
+                f"Citra unggahan: {uploaded_file.name} ({active_rgb.shape[1]}×{active_rgb.shape[0]} px) "
+                f"· Kategori: {chosen_cat_label}."
+            )
         elif fallback_options[selected_fallback] == "COCO_RANDOM" and coco_images:
             c_path = coco_images[st.session_state.coco_idx % len(coco_images)]
             active_rgb = np.array(Image.open(c_path).convert("RGB"))
-            caption_text = f"Sampel pengujian COCO 2017: {os.path.basename(c_path)}."
+            rel_cat = os.path.basename(os.path.dirname(c_path))
+            caption_text = (
+                f"Sampel pengujian COCO 2017: {os.path.basename(c_path)} "
+                f"(Subfolder: {rel_cat} · Mode: {chosen_cat_label})."
+            )
         else:
             f_path = fallback_options[selected_fallback]
             if os.path.exists(f_path):
                 active_rgb = np.array(Image.open(f_path).convert("RGB"))
-                caption_text = f"{selected_fallback}. Ganti dengan foto Anda di kolom kiri untuk melihat hasil sebenarnya."
+                caption_text = f"{selected_fallback} · Kategori: {chosen_cat_label}."
+
+        # Resolve category-specific checkpoint if trained, fallback to default checkpoint
+        cat_ckpt = os.path.join(PROJECT_ROOT, "checkpoints", f"best_model_{selected_category}.pth")
+        active_ckpt = cat_ckpt if (selected_category != "general" and os.path.exists(cat_ckpt)) else checkpoint_default
 
         # Run model inference
-        model, _ = get_colorizer_model(engine_key, checkpoint_default, device_opt)
+        model, _ = get_colorizer_model(engine_key, active_ckpt, device_opt)
         if active_rgb is not None:
             gray_2d = cv2.cvtColor(active_rgb, cv2.COLOR_RGB2GRAY)
             input_gray_rgb = cv2.cvtColor(gray_2d, cv2.COLOR_GRAY2RGB)
@@ -594,6 +653,7 @@ with tab_studio:
                 warmth_deg=warmth_deg,
                 apply_clahe=apply_clahe,
                 device=device_opt,
+                category=selected_category,
             )
 
             st.session_state["last_colorized_rgb"] = colorized_rgb
@@ -710,6 +770,7 @@ with tab_exp:
                 warmth_deg=warmth_deg,
                 apply_clahe=apply_clahe,
                 device=device_opt,
+                category=selected_category,
             )
 
             if exp_view_mode == "Slider perbandingan interaktif":
