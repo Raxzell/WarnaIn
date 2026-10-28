@@ -664,7 +664,6 @@ def build_exhibition_plates(sample_dir_path: str, checkpoint_path: str, device_s
         },
     ]
 
-    model_ens, _ = get_colorizer_model("ensemble", checkpoint_path, device_str)
     plates_out = []
     for sp in specs:
         fpath = os.path.join(sample_dir_path, sp["filename"])
@@ -673,16 +672,13 @@ def build_exhibition_plates(sample_dir_path: str, checkpoint_path: str, device_s
         rgb_src = np.array(Image.open(fpath).convert("RGB"))
         gray_2d = cv2.cvtColor(rgb_src, cv2.COLOR_RGB2GRAY)
         bw_rgb = cv2.cvtColor(gray_2d, cv2.COLOR_GRAY2RGB)
-        col_rgb, _ = colorize_image(
-            model=model_ens,
-            rgb_or_gray=bw_rgb,
-            target_size=(256, 256),
-            vibrancy=1.08,
-            warmth_deg=0,
-            apply_clahe=False,
-            device=device_str,
-            category=sp["category_key"],
-        )
+
+        base_name, _ = os.path.splitext(sp["filename"])
+        col_path = os.path.join(sample_dir_path, f"{base_name}_colorized.jpg")
+        if os.path.exists(col_path):
+            col_rgb = np.array(Image.open(col_path).convert("RGB"))
+        else:
+            col_rgb = rgb_src
         plates_out.append({
             "plate_no": sp["plate_no"],
             "title": sp["title"],
