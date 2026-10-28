@@ -1,11 +1,12 @@
 """
-WarnaIn — Studio Pewarnaan Foto (Streamlit)
-Mengimplementasikan desain editorial surat kabar dari assets/warnain_design.html
-dengan mesin inferensi PyTorch CIE L*a*b* Deep Learning.
+WarnaIn — Photo Colorization Studio (Streamlit)
+Implements the editorial broadsheet design from assets/warnain_design.html
+powered by a PyTorch CIE L*a*b* Deep Learning inference engine.
 """
 
 import os
 import sys
+from datetime import datetime
 
 # Ensure project root and app directory are always in sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -42,6 +43,7 @@ try:
     from app.components import (
         render_before_after_slider,
         render_metric_cards,
+        render_exhibition_gallery,
         render_cielab_inspector,
         render_chroma_scatter,
     )
@@ -49,6 +51,7 @@ except ImportError:
     from components import (
         render_before_after_slider,
         render_metric_cards,
+        render_exhibition_gallery,
         render_cielab_inspector,
         render_chroma_scatter,
     )
@@ -58,7 +61,7 @@ except ImportError:
 # 1. Page Configuration & Editorial CSS
 # ==========================================
 st.set_page_config(
-    page_title="WarnaIn — Studio Pewarnaan Foto",
+    page_title="WarnaIn — Photo Colorization Studio",
     page_icon="📰",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -80,11 +83,12 @@ st.markdown(
         --sans: 'Plus Jakarta Sans', system-ui, sans-serif;
       }
 
-      /* Hide Streamlit Chrome */
+      /* Hide Streamlit Chrome & Heading Anchor Links */
       header[data-testid="stHeader"],
       [data-testid="stToolbar"],
       [data-testid="stDecoration"],
       [data-testid="collapsedControl"],
+      [data-testid="stHeaderActionElements"],
       section[data-testid="stSidebar"],
       #MainMenu,
       footer {
@@ -113,7 +117,7 @@ st.markdown(
       /* Dateline & Masthead */
       .dateline {
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-start;
         gap: 12px;
         flex-wrap: wrap;
         font-size: 13px;
@@ -243,7 +247,7 @@ st.markdown(
         font-size: 1.15rem !important;
         color: var(--soft) !important;
         margin: 8px 0 16px 0 !important;
-        max-width: 60ch !important;
+        max-width: 64ch !important;
       }
 
       /* Stats Strip (.stats) */
@@ -318,6 +322,155 @@ st.markdown(
       }
       .col ul {
         padding-left: 18px;
+      }
+
+      /* Editorial Exhibition Plate Gallery (.exhibition-section) */
+      .exhibition-section {
+        margin-top: 38px;
+        border-top: 4px double var(--rule);
+        padding-top: 18px;
+      }
+      .exhibition-header {
+        text-align: center;
+        border-bottom: 1px solid var(--rule);
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+      }
+      .exhibition-kicker {
+        display: block;
+        font-family: var(--sans);
+        font-size: 11.5px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--soft);
+        margin-bottom: 4px;
+      }
+      .exhibition-h2 {
+        font-family: var(--serif) !important;
+        font-size: clamp(1.65rem, 3.2vw, 2.35rem) !important;
+        font-weight: 700 !important;
+        color: var(--ink) !important;
+        line-height: 1.12 !important;
+        margin: 0 !important;
+      }
+      .exhibition-deck {
+        font-family: var(--serif) !important;
+        font-style: italic !important;
+        font-size: 1.02rem !important;
+        color: var(--soft) !important;
+        margin: 6px auto 0 !important;
+        max-width: 66ch;
+      }
+      .exhibition-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0;
+      }
+      .ex-card {
+        padding: 4px 18px 8px 0;
+      }
+      .ex-card-divider {
+        padding: 4px 18px 8px 18px;
+        border-left: 1px solid var(--hair);
+      }
+      .ex-card-divider:nth-child(3n) {
+        padding-right: 0;
+      }
+      .ex-card-row2 {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--hair);
+      }
+      .ex-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--hair);
+        padding-bottom: 4px;
+        margin-bottom: 6px;
+      }
+      .ex-kicker {
+        font-family: var(--sans);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: var(--ink);
+      }
+      .ex-cat {
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 12.5px;
+        color: var(--soft);
+      }
+      .ex-title {
+        font-family: var(--serif) !important;
+        font-size: 1.25rem !important;
+        font-weight: 700 !important;
+        color: var(--ink) !important;
+        margin: 0 0 10px 0 !important;
+      }
+      .ex-pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .ex-frame {
+        position: relative;
+        border: 1px solid var(--ink);
+        background: var(--paper);
+        aspect-ratio: 4 / 3;
+        overflow: hidden;
+      }
+      .ex-frame img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .ex-bw img {
+        filter: grayscale(1) contrast(1.05);
+      }
+      .ex-bw:after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle, rgba(0,0,0,.14) 0.6px, transparent 1px) 0 0 / 4px 4px;
+        mix-blend-mode: multiply;
+        pointer-events: none;
+      }
+      .ex-tag {
+        position: absolute;
+        bottom: 6px;
+        left: 6px;
+        padding: 1px 7px;
+        background: var(--sheet);
+        border: 1px solid var(--ink);
+        font-family: var(--sans);
+        font-size: 10.5px;
+        font-weight: 600;
+        color: var(--ink);
+        z-index: 2;
+      }
+      .ex-cap {
+        font-family: var(--serif) !important;
+        font-style: italic !important;
+        font-size: 0.9rem !important;
+        line-height: 1.45 !important;
+        color: var(--soft) !important;
+        margin-top: 8px !important;
+        margin-bottom: 0 !important;
+      }
+      @media (max-width: 900px) {
+        .exhibition-grid {
+          grid-template-columns: 1fr;
+          gap: 18px;
+        }
+        .ex-card, .ex-card-divider {
+          padding: 0 0 14px 0;
+          border-left: 0;
+          border-bottom: 1px solid var(--hair);
+        }
       }
 
       /* Footer (.foot) */
@@ -454,23 +607,109 @@ def colorize_image(
         return colorized, latency
 
 
+@st.cache_data(show_spinner=False)
+def build_exhibition_plates(sample_dir_path: str, checkpoint_path: str, device_str: str) -> list:
+    """
+    Precomputes and caches the 6 archival exhibition plates so the bottom exhibition gallery
+    renders instantaneously.
+    """
+    specs = [
+        {
+            "plate_no": "PLATE I",
+            "title": "Archival Studio Portrait",
+            "filename": "vintage_portrait.jpg",
+            "category_key": "portraits",
+            "category_label": "Human Portraits",
+            "caption": "Restored with the Human Portraits chrominance prior, preserving natural skin-tone warmth and subtle shadow gradation.",
+        },
+        {
+            "plate_no": "PLATE II",
+            "title": "Classical Stone Facade",
+            "filename": "historic_building.jpg",
+            "category_key": "architecture",
+            "category_label": "Architecture & Landmarks",
+            "caption": "Calibrated with the Architecture prior, separating warm masonry and timber midtones from crisp cerulean sky.",
+        },
+        {
+            "plate_no": "PLATE III",
+            "title": "Alpine & Coastal Vista",
+            "filename": "nature_landscape.jpg",
+            "category_key": "landscapes",
+            "category_label": "Nature & Landscapes",
+            "caption": "Synthesized under the Landscapes prior, enhancing organic foliage greens and atmospheric horizon depth.",
+        },
+        {
+            "plate_no": "PLATE IV",
+            "title": "Schoolchildren in Sukabumi",
+            "filename": "vintage_bw_13_murid_sekolah_sukabumi.jpg",
+            "category_key": "portraits",
+            "category_label": "Human Portraits",
+            "caption": "Archival group portrait from Sukabumi restored with balanced facial warmth and natural colonial-era attire tones.",
+        },
+        {
+            "plate_no": "PLATE V",
+            "title": "Pasar Senen, Old Batavia",
+            "filename": "vintage_bw_01_pasar_senen_batavia.jpg",
+            "category_key": "architecture",
+            "category_label": "Architecture & Landmarks",
+            "caption": "Historic Pasar Senen streetscape in Batavia, recovering warm terracotta roofing, timber market stalls, and tropical daylight.",
+        },
+        {
+            "plate_no": "PLATE VI",
+            "title": "Rice Terraces & Volcano Backdrop",
+            "filename": "vintage_bw_12_sawah_latar_gunung_berapi.jpg",
+            "category_key": "landscapes",
+            "category_label": "Nature & Landscapes",
+            "caption": "Javanese paddy fields beneath a volcanic peak, calibrated for lush emerald terraces and distant mountain haze.",
+        },
+    ]
+
+    model_ens, _ = get_colorizer_model("ensemble", checkpoint_path, device_str)
+    plates_out = []
+    for sp in specs:
+        fpath = os.path.join(sample_dir_path, sp["filename"])
+        if not os.path.exists(fpath):
+            continue
+        rgb_src = np.array(Image.open(fpath).convert("RGB"))
+        gray_2d = cv2.cvtColor(rgb_src, cv2.COLOR_RGB2GRAY)
+        bw_rgb = cv2.cvtColor(gray_2d, cv2.COLOR_GRAY2RGB)
+        col_rgb, _ = colorize_image(
+            model=model_ens,
+            rgb_or_gray=bw_rgb,
+            target_size=(256, 256),
+            vibrancy=1.08,
+            warmth_deg=0,
+            apply_clahe=False,
+            device=device_str,
+            category=sp["category_key"],
+        )
+        plates_out.append({
+            "plate_no": sp["plate_no"],
+            "title": sp["title"],
+            "category": sp["category_label"],
+            "before_rgb": bw_rgb,
+            "after_rgb": col_rgb,
+            "caption": sp["caption"],
+        })
+    return plates_out
+
+
 # ==========================================
 # 3. Dateline & Masthead Header
 # ==========================================
 has_cuda = torch.cuda.is_available()
 device_opt = "cuda" if has_cuda else "cpu"
-device_label = "Model aktif di GPU" if has_cuda else "Model aktif di CPU"
 checkpoint_default = os.path.join(PROJECT_ROOT, "checkpoints", "best_model.pth")
+current_date_str = datetime.now().strftime("%A, %B %d, %Y")
 
 st.markdown(
     f"""
     <div class="dateline">
-      <span>Senin, 26 Oktober 2026</span>
-      <span>{device_label} · Ruang warna CIE L*a*b*</span>
+      <span>{current_date_str}</span>
     </div>
     <header class="masthead">
       <h1>WarnaIn</h1>
-      <p>Harian pewarnaan foto hitam-putih berbasis deep learning</p>
+      <p>A deep learning broadsheet for monochrome &amp; archival photo colorization</p>
     </header>
     """,
     unsafe_allow_html=True,
@@ -480,9 +719,9 @@ st.markdown(
 # 4. Navigation Bar (Double-Ruled Broadsheet Tabs)
 # ==========================================
 tab_studio, tab_exp, tab_inspect = st.tabs([
-    "Studio pewarnaan",
-    "Eksperimen degradasi & metrik",
-    "Inspeksi ruang warna",
+    "Colorization Studio",
+    "Degradation & Metrics Lab",
+    "CIE L*a*b* Space Inspector",
 ])
 
 # Discover Sample & Categorized COCO Dataset Paths
@@ -515,36 +754,36 @@ def get_coco_images_by_category(base_dir: str, category: str = "general") -> lis
 coco_images_all = get_coco_images_by_category(coco_test_dir, "general")
 
 CATEGORY_LABELS = {
-    "Umum (General)": "general",
-    "Hewan & Satwa (Animals)": "animals",
-    "Arsitektur & Bangunan (Architecture)": "architecture",
-    "Alam & Pemandangan (Landscapes)": "landscapes",
-    "Potret & Manusia (Portraits)": "portraits",
-    "Objek & Produk (Objects)": "objects",
+    "General (All Domains)": "general",
+    "Animals & Wildlife": "animals",
+    "Architecture & Landmarks": "architecture",
+    "Nature & Landscapes": "landscapes",
+    "Human Portraits": "portraits",
+    "Everyday Objects & Products": "objects",
 }
 CATEGORY_DISPLAY_NAMES = {v: k for k, v in CATEGORY_LABELS.items()}
 
 
 # ==========================================
-# TAB 1: Studio Pewarnaan (Exact 270px Aside + Main Lead)
+# TAB 1: Colorization Studio (Exact 270px Aside + Main Lead)
 # ==========================================
 with tab_studio:
     col_aside, col_lead = st.columns([270, 850], gap="medium")
 
     with col_aside:
-        st.markdown('<h2 class="aside-h2">Unggah foto</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="aside-h2">Upload Photograph</h2>', unsafe_allow_html=True)
         uploaded_file = st.file_uploader(
-            "Tarik foto ke sini atau pilih file (JPG, PNG, atau WEBP)",
+            "Drag and drop a photograph here, or browse files (JPG, PNG, or WEBP)",
             type=["png", "jpg", "jpeg", "webp"],
             key="main_uploader",
             label_visibility="collapsed",
         )
 
         chosen_cat_label = st.selectbox(
-            "Kategori gambar",
+            "Subject Category",
             options=list(CATEGORY_LABELS.keys()),
             index=0,
-            help="Pilih 'Umum (General)' untuk semua jenis foto, atau pilih kategori spesifik agar kalibrasi krominansi menyesuaikan karakter subjek.",
+            help="Select 'General (All Domains)' for unconstrained inference, or choose a specialized semantic domain to calibrate CIE L*a*b* chrominance priors.",
         )
         selected_category = CATEGORY_LABELS[chosen_cat_label]
         coco_images = get_coco_images_by_category(coco_test_dir, selected_category)
@@ -552,21 +791,24 @@ with tab_studio:
             coco_images = coco_images_all
 
         st.markdown(
-            '<div style="margin-top:6px;margin-bottom:8px;font-size:13px;color:var(--soft)">Belum ada foto? Coba sampel klasik atau dataset COCO.</div>',
+            '<div style="margin-top:6px;margin-bottom:8px;font-size:13px;color:var(--soft)">No photograph at hand? Try an archival plate or the COCO benchmark set.</div>',
             unsafe_allow_html=True,
         )
 
         fallback_options = {
-            "Sampel: Satwa & Alam": os.path.join(sample_dir, "nature_landscape.jpg"),
-            "Sampel: Arsitektur": os.path.join(sample_dir, "historic_building.jpg"),
-            "Sampel: Portrait Klasik": os.path.join(sample_dir, "vintage_portrait.jpg"),
+            "Sample: Nature & Landscape": os.path.join(sample_dir, "nature_landscape.jpg"),
+            "Sample: Historic Architecture": os.path.join(sample_dir, "historic_building.jpg"),
+            "Sample: Vintage Portrait": os.path.join(sample_dir, "vintage_portrait.jpg"),
+            "Archive: Schoolchildren in Sukabumi": os.path.join(sample_dir, "vintage_bw_13_murid_sekolah_sukabumi.jpg"),
+            "Archive: Pasar Senen, Old Batavia": os.path.join(sample_dir, "vintage_bw_01_pasar_senen_batavia.jpg"),
+            "Archive: Rice Terraces & Volcano": os.path.join(sample_dir, "vintage_bw_12_sawah_latar_gunung_berapi.jpg"),
         }
         if coco_images:
-            cat_tag = "Semua" if selected_category == "general" else selected_category.capitalize()
-            fallback_options[f"Dataset COCO ({cat_tag} · {len(coco_images)} Citra)"] = "COCO_RANDOM"
+            cat_tag = "All" if selected_category == "general" else selected_category.capitalize()
+            fallback_options[f"COCO 2017 Dataset ({cat_tag} · {len(coco_images)} Plates)"] = "COCO_RANDOM"
 
         selected_fallback = st.selectbox(
-            "Koleksi sampel",
+            "Sample Collection",
             options=list(fallback_options.keys()),
             label_visibility="collapsed",
         )
@@ -574,38 +816,38 @@ with tab_studio:
         if fallback_options[selected_fallback] == "COCO_RANDOM":
             if "coco_idx" not in st.session_state:
                 st.session_state.coco_idx = 18
-            if st.button("Acak foto COCO lainnya", type="secondary"):
+            if st.button("Draw Another COCO Plate", type="secondary"):
                 st.session_state.coco_idx = int(np.random.randint(0, len(coco_images)))
 
-        st.markdown('<h2 class="aside-h2-sub">Pengaturan</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="aside-h2-sub">Studio Controls</h2>', unsafe_allow_html=True)
 
         engine_map = {
             "Ensemble Pro (U-Net + Semantic Prior)": "ensemble",
             "CIE Lab U-Net": "siggraph17",
             "Semantic Chrominance Prior": "eccv16",
         }
-        chosen_engine_label = st.selectbox("Arsitektur model", options=list(engine_map.keys()), index=0)
+        chosen_engine_label = st.selectbox("Model Architecture", options=list(engine_map.keys()), index=0)
         engine_key = engine_map[chosen_engine_label]
 
         vibrancy = st.slider(
-            "Intensitas warna",
+            "Chroma Vibrancy",
             min_value=0.60,
             max_value=1.80,
             value=1.05,
             step=0.05,
         )
         warmth_deg = st.slider(
-            "Suhu warna",
+            "Color Temperature",
             min_value=-30,
             max_value=30,
             value=0,
             step=2,
-            help="0 = netral, negatif = dingin, positif = hangat",
+            help="0 = neutral, negative = cooler, positive = warmer",
         )
-        apply_clahe = st.checkbox("Pertajam kontras (CLAHE)", value=False)
+        apply_clahe = st.checkbox("Enhance Luminance Contrast (CLAHE)", value=False)
 
         res_step = st.select_slider(
-            "Resolusi proses",
+            "Processing Resolution",
             options=["256 px", "384 px", "512 px"],
             value="256 px",
         )
@@ -614,26 +856,26 @@ with tab_studio:
 
         # Resolve active image
         active_rgb = None
-        caption_text = "Contoh ilustrasi. Ganti dengan foto Anda untuk melihat hasil sebenarnya."
+        caption_text = "Archival demonstration plate. Upload your own photograph in the left column to inspect live restoration."
         if uploaded_file is not None:
             active_rgb = np.array(Image.open(uploaded_file).convert("RGB"))
             caption_text = (
-                f"Citra unggahan: {uploaded_file.name} ({active_rgb.shape[1]}×{active_rgb.shape[0]} px) "
-                f"· Kategori: {chosen_cat_label}."
+                f"Uploaded plate: {uploaded_file.name} ({active_rgb.shape[1]}×{active_rgb.shape[0]} px) "
+                f"· Category: {chosen_cat_label}."
             )
         elif fallback_options[selected_fallback] == "COCO_RANDOM" and coco_images:
             c_path = coco_images[st.session_state.coco_idx % len(coco_images)]
             active_rgb = np.array(Image.open(c_path).convert("RGB"))
             rel_cat = os.path.basename(os.path.dirname(c_path))
             caption_text = (
-                f"Sampel pengujian COCO 2017: {os.path.basename(c_path)} "
-                f"(Subfolder: {rel_cat} · Mode: {chosen_cat_label})."
+                f"COCO 2017 benchmark plate: {os.path.basename(c_path)} "
+                f"(Split folder: {rel_cat} · Mode: {chosen_cat_label})."
             )
         else:
             f_path = fallback_options[selected_fallback]
             if os.path.exists(f_path):
                 active_rgb = np.array(Image.open(f_path).convert("RGB"))
-                caption_text = f"{selected_fallback} · Kategori: {chosen_cat_label}."
+                caption_text = f"{selected_fallback} · Category: {chosen_cat_label}."
 
         # Resolve category-specific checkpoint if trained, fallback to default checkpoint
         cat_ckpt = os.path.join(PROJECT_ROOT, "checkpoints", f"best_model_{selected_category}.pth")
@@ -663,7 +905,7 @@ with tab_studio:
             Image.fromarray(colorized_rgb).save(buf, format="PNG")
             st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
             st.download_button(
-                label="Unduh hasil (PNG)",
+                label="Download Colorized Plate (PNG)",
                 data=buf.getvalue(),
                 file_name=f"WarnaIn_{int(time.time())}.png",
                 mime="image/png",
@@ -671,9 +913,9 @@ with tab_studio:
             )
 
     with col_lead:
-        st.markdown('<h2 class="lead-h2">Foto lama, warna baru</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="lead-h2">Vintage Frames, Reimagined Hue</h2>', unsafe_allow_html=True)
         st.markdown(
-            '<p class="lead-deck">Geser garis untuk membandingkan foto asli dengan hasil pewarnaan. Detail tepi tetap sama karena hanya kanal warna yang diprediksi.</p>',
+            '<p class="lead-deck">Slide the dividing rule to compare the monochrome original against the neural reconstruction. Fine edge geometry remains untouched—only the chromatic channels are synthesized.</p>',
             unsafe_allow_html=True,
         )
 
@@ -681,8 +923,8 @@ with tab_studio:
             render_before_after_slider(
                 img_before=input_gray_rgb,
                 img_after=colorized_rgb,
-                label_before="Hitam-putih",
-                label_after="Hasil WarnaIn",
+                label_before="Monochrome",
+                label_after="WarnaIn Plate",
                 caption=caption_text,
                 max_height=490,
             )
@@ -696,16 +938,16 @@ with tab_studio:
             """
             <div class="cols">
               <section class="col">
-                <h2>Mengapa CIE Lab?</h2>
-                <p class="dropcap">Ruang warna RGB mencampur kecerahan dan warna di ketiga kanalnya. CIE Lab memisahkannya, sehingga struktur foto hitam-putih bisa dipertahankan utuh sementara jaringan hanya menebak warnanya.</p>
-                <p>Kanal L* menyimpan tepi, tekstur, dan bayangan asli. Kanal a* dan b* adalah hijau–merah dan biru–kuning yang diprediksi model.</p>
+                <h2>Why CIE L*a*b*?</h2>
+                <p class="dropcap">Standard RGB entangles luminance and color across all three channels. CIE L*a*b* decouples them cleanly, preserving the full monochrome structure while the neural network predicts only chromaticity.</p>
+                <p>The L* channel retains original edges, film grain, and shadow depth, whereas the a* and b* axes encode the green–red and blue–yellow chrominance planes.</p>
               </section>
               <section class="col">
-                <h2>Cara kerjanya</h2>
+                <h2>How the Pipeline Works</h2>
                 <ul>
-                  <li>Kanal L* diambil dari foto pada resolusi penuh.</li>
-                  <li>U-Net memprediksi a* dan b* pada ukuran proses yang dipilih.</li>
-                  <li>Hasil prediksi diperbesar, lalu digabung kembali dengan L* asli.</li>
+                  <li>Full-resolution L* luminance is extracted directly from the source photograph.</li>
+                  <li>The deep U-Net predicts a* and b* chrominance at the selected processing scale.</li>
+                  <li>Predicted chrominance is upsampled, calibrated by semantic category priors, and fused with the original L* channel.</li>
                 </ul>
               </section>
             </div>
@@ -713,44 +955,51 @@ with tab_studio:
             unsafe_allow_html=True,
         )
 
+    # Bottom Editorial Exhibition Plate Gallery
+    exhibition_plates = build_exhibition_plates(sample_dir, checkpoint_default, device_opt)
+    render_exhibition_gallery(exhibition_plates)
+
 
 # ==========================================
-# TAB 2: Eksperimen Degradasi & Metrik
+# TAB 2: Degradation & Metrics Lab
 # ==========================================
 with tab_exp:
     col_exp_aside, col_exp_main = st.columns([270, 850], gap="medium")
 
     with col_exp_aside:
-        st.markdown('<h2 class="aside-h2">Uji degradasi</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="aside-h2">Degradation Test</h2>', unsafe_allow_html=True)
         exp_file = st.file_uploader(
-            "Unggah foto berwarna (Ground Truth)",
+            "Upload Ground-Truth Color Photograph",
             type=["png", "jpg", "jpeg", "webp"],
             key="exp_uploader",
             label_visibility="collapsed",
         )
         st.markdown(
-            '<div style="margin-top:6px;margin-bottom:14px;font-size:13px;color:var(--soft)">Menggunakan foto aktif dari studio bila tidak ada file baru yang diunggah.</div>',
+            '<div style="margin-top:6px;margin-bottom:14px;font-size:13px;color:var(--soft)">Defaults to the active Studio photograph when no external file is uploaded.</div>',
             unsafe_allow_html=True,
         )
 
         sat_pct = st.slider(
-            "Saturasi input (%)",
+            "Input Saturation (%)",
             min_value=0,
             max_value=100,
             value=0,
             step=5,
-            help="0% = Hitam-putih murni, 25% = Foto pudar, 100% = Warna asli.",
+            help="0% = Pure monochrome, 25% = Faded archival print, 100% = Original color.",
         )
 
         exp_view_mode = st.selectbox(
-            "Mode perbandingan",
-            options=["Slider perbandingan interaktif", "Tiga kolom (Asli · Pudar · Restorasi)"],
+            "Comparison Layout",
+            options=[
+                "Interactive Split Comparison",
+                "Triptych Plates (Ground Truth · Degraded · Restored)",
+            ],
         )
 
     with col_exp_main:
-        st.markdown('<h2 class="lead-h2">Eksperimen degradasi &amp; metrik</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="lead-h2">Degradation &amp; Quantitative Metrics</h2>', unsafe_allow_html=True)
         st.markdown(
-            '<p class="lead-deck">Simulasikan foto yang memudar seiring waktu, lalu ukur akurasi pemulihan warna terhadap foto asli menggunakan metrik PSNR, SSIM, dan MAE.</p>',
+            '<p class="lead-deck">Simulate archival pigment fading over time and evaluate neural color recovery against the ground-truth photograph via PSNR, SSIM, and MAE.</p>',
             unsafe_allow_html=True,
         )
 
@@ -773,13 +1022,13 @@ with tab_exp:
                 category=selected_category,
             )
 
-            if exp_view_mode == "Slider perbandingan interaktif":
+            if exp_view_mode == "Interactive Split Comparison":
                 render_before_after_slider(
                     img_before=degraded_rgb,
                     img_after=restored_rgb,
-                    label_before=f"Saturasi {sat_pct}%",
-                    label_after="Restorasi WarnaIn",
-                    caption=f"Perbandingan citra terdegradasi ({sat_pct}% saturasi) dengan hasil pemulihan model.",
+                    label_before=f"Saturation {sat_pct}%",
+                    label_after="WarnaIn Restoration",
+                    caption=f"Comparison between the degraded input ({sat_pct}% saturation) and the neural restoration.",
                     max_height=480,
                 )
             else:
@@ -788,10 +1037,10 @@ with tab_exp:
                     st.markdown('<h2 class="serif-sub">1. Ground Truth</h2>', unsafe_allow_html=True)
                     st.image(gt_rgb, use_container_width=True)
                 with c2:
-                    st.markdown(f'<h2 class="serif-sub">2. Degradasi ({sat_pct}%)</h2>', unsafe_allow_html=True)
+                    st.markdown(f'<h2 class="serif-sub">2. Degraded ({sat_pct}%)</h2>', unsafe_allow_html=True)
                     st.image(degraded_rgb, use_container_width=True)
                 with c3:
-                    st.markdown('<h2 class="serif-sub">3. Hasil WarnaIn</h2>', unsafe_allow_html=True)
+                    st.markdown('<h2 class="serif-sub">3. WarnaIn Plate</h2>', unsafe_allow_html=True)
                     st.image(restored_rgb, use_container_width=True)
 
             render_metric_cards(
@@ -803,12 +1052,12 @@ with tab_exp:
 
 
 # ==========================================
-# TAB 3: Inspeksi Ruang Warna CIE Lab
+# TAB 3: CIE L*a*b* Space Inspector
 # ==========================================
 with tab_inspect:
-    st.markdown('<h2 class="lead-h2">Inspeksi ruang warna CIE L*a*b*</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="lead-h2">CIE L*a*b* Color Space Inspector</h2>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="lead-deck">Dekomposisi citra hasil pewarnaan ke dalam kanal luminansi (L*) serta dua sumbu kromatik berlawanan: hijau–merah (a*) dan biru–kuning (b*).</p>',
+        '<p class="lead-deck">Deconstruct the colorized plate into its perceptual lightness channel (L*) and two opponent chromatic axes: green–red (a*) and blue–yellow (b*).</p>',
         unsafe_allow_html=True,
     )
 
@@ -824,9 +1073,9 @@ with tab_inspect:
             st.markdown(
                 """
                 <div class="col" style="padding-right:0;">
-                  <h2>Arsitektur Jaringan</h2>
-                  <p class="dropcap">Model memisahkan masalah struktur dari masalah semantik warna. Karena kanal L* tidak diubah oleh jaringan, tidak ada risiko foto menjadi kabur atau kehilangan tekstur aslinya.</p>
-                  <p>Jaringan U-Net menggunakan <em>skip connections</em> pada setiap tahap resolusi untuk memastikan warna tidak bocor melewati batas tepi objek.</p>
+                  <h2>Network Architecture</h2>
+                  <p class="dropcap">Our architecture separates structural preservation from semantic color inference. Because the L* lightness channel bypasses neural modification, the output never suffers from spatial blurring or loss of photographic grain.</p>
+                  <p>Multi-scale <em>skip connections</em> across the U-Net encoder and decoder prevent chrominance bleeding across object boundaries.</p>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -839,8 +1088,7 @@ with tab_inspect:
 st.markdown(
     """
     <div class="foot">
-      <span>WarnaIn, proyek deep learning pewarnaan citra</span>
-      <span>Binus University</span>
+      <span>WarnaIn — Deep Learning Photo Colorization</span>
     </div>
     """,
     unsafe_allow_html=True,

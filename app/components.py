@@ -1,9 +1,10 @@
 """
 WarnaIn - Editorial Broadsheet UI Components for Streamlit
-Implements the exact visual design from assets/warnain_design.html:
+Implements the visual design from assets/warnain_design.html in Editorial English:
 - Broadsheet Before-After Comparison (.cmp, halftone before, sharp rectangular tags, ⇆ handle, serif figcaption)
 - Editorial Stats Strip (.stats with Old Standard TT 2rem numerals & hairline dividers)
-- CIE Lab Technical Plates & Chromaticity Plot matching --sheet (#F2F1ED) and --ink (#000).
+- CIE Lab Technical Plates & Chromaticity Plot matching --sheet (#F2F1ED) and --ink (#000)
+- Editorial Exhibition Plate Gallery showcasing side-by-side archival restorations.
 """
 
 import io
@@ -16,7 +17,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 
-def image_to_base64(image_input) -> str:
+def image_to_base64(image_input, max_side: int = 0) -> str:
     """Converts numpy array or PIL Image to base64 JPEG string."""
     if isinstance(image_input, np.ndarray):
         pil_img = Image.fromarray(np.clip(image_input, 0, 255).astype(np.uint8))
@@ -25,17 +26,22 @@ def image_to_base64(image_input) -> str:
     else:
         raise ValueError("Unsupported image type")
 
+    if max_side and max(pil_img.size) > max_side:
+        w, h = pil_img.size
+        scale = max_side / float(max(w, h))
+        pil_img = pil_img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
+
     buffered = io.BytesIO()
-    pil_img.save(buffered, format="JPEG", quality=95)
+    pil_img.save(buffered, format="JPEG", quality=92)
     return base64.b64encode(buffered.getvalue()).decode()
 
 
 def render_before_after_slider(
     img_before: np.ndarray,
     img_after: np.ndarray,
-    label_before: str = "Hitam-putih",
-    label_after: str = "Hasil WarnaIn",
-    caption: str = "Geser garis tengah untuk membandingkan citra hitam-putih asli dengan hasil pewarnaan WarnaIn.",
+    label_before: str = "Monochrome",
+    label_after: str = "WarnaIn Plate",
+    caption: str = "Drag the dividing rule to compare the monochrome source against the WarnaIn colorization.",
     max_height: int = 500,
 ):
     """
@@ -51,7 +57,7 @@ def render_before_after_slider(
 
     html_code = f"""
     <!DOCTYPE html>
-    <html lang="id">
+    <html lang="en">
     <head>
     <meta charset="utf-8">
     <link href="https://fonts.googleapis.com/css2?family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -182,15 +188,15 @@ def render_before_after_slider(
       <figure>
         <div class="cmp" id="cmp">
           <div class="layer before">
-            <img src="data:image/jpeg;base64,{b64_before}" alt="Hitam-putih" />
+            <img src="data:image/jpeg;base64,{b64_before}" alt="Monochrome" />
           </div>
           <div class="layer after" id="after">
-            <img src="data:image/jpeg;base64,{b64_after}" alt="Hasil WarnaIn" />
+            <img src="data:image/jpeg;base64,{b64_after}" alt="WarnaIn Plate" />
           </div>
           <span class="tag l">{label_before}</span>
           <span class="tag r">{label_after}</span>
           <div class="bar" id="bar"></div>
-          <input type="range" min="0" max="100" step="0.2" value="50" id="pos" aria-label="Geser perbandingan sebelum dan sesudah">
+          <input type="range" min="0" max="100" step="0.2" value="50" id="pos" aria-label="Slide to compare before and after">
         </div>
         <figcaption>{caption}</figcaption>
       </figure>
@@ -210,31 +216,90 @@ def render_before_after_slider(
     components.html(html_code, height=cmp_height + 42)
 
 
-def _fmt_comma(val: float, decimals: int = 1) -> str:
-    """Formats float with Indonesian comma decimal separator (e.g., 28,4)."""
-    return f"{val:.{decimals}f}".replace(".", ",")
+def _fmt_num(val: float, decimals: int = 1) -> str:
+    """Formats float with English decimal point."""
+    return f"{val:.{decimals}f}"
 
 
 def render_metric_cards(psnr: float, ssim: float, mae: float, latency_ms: float = 0.0):
     """
-    Renders the exact editorial .stats strip from warnain_design.html.
+    Renders the editorial .stats strip from warnain_design.html.
     """
-    psnr_str = _fmt_comma(psnr, 1)
-    ssim_str = _fmt_comma(ssim, 2)
-    mae_str = _fmt_comma(mae, 1)
+    psnr_str = _fmt_num(psnr, 1)
+    ssim_str = _fmt_num(ssim, 2)
+    mae_str = _fmt_num(mae, 1)
     lat_str = f"{int(round(latency_ms))}"
 
     st.markdown(
         f"""
-        <div class="stats" aria-label="Metrik">
+        <div class="stats" aria-label="Quantitative Metrics">
           <div class="stat"><b>{psnr_str}</b><span>PSNR (dB)</span></div>
           <div class="stat"><b>{ssim_str}</b><span>SSIM</span></div>
           <div class="stat"><b>{mae_str}</b><span>MAE</span></div>
-          <div class="stat"><b>{lat_str}</b><span>Waktu proses (ms)</span></div>
+          <div class="stat"><b>{lat_str}</b><span>Inference Time (ms)</span></div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_exhibition_gallery(plates: list):
+    """
+    Renders an Editorial Exhibition Plate gallery at the bottom of the Studio page.
+    Each item in `plates` is a dict:
+      {
+        "plate_no": "PLATE I",
+        "title": "Vintage Portrait",
+        "category": "Human Portraits",
+        "before_rgb": np.ndarray,
+        "after_rgb": np.ndarray,
+        "caption": str,
+      }
+    """
+    if not plates:
+        return
+
+    cards_html = []
+    for idx, item in enumerate(plates):
+        b64_bw = image_to_base64(item["before_rgb"], max_side=420)
+        b64_col = image_to_base64(item["after_rgb"], max_side=420)
+        col_cls = "ex-card" if (idx % 3 == 0) else "ex-card ex-card-divider"
+        row_cls = " ex-card-row2" if idx >= 3 else ""
+        border_cls = f"{col_cls}{row_cls}"
+        card_str = (
+            f'<article class="{border_cls}">'
+            f'<div class="ex-meta">'
+            f'<span class="ex-kicker">{item["plate_no"]}</span>'
+            f'<span class="ex-cat">{item["category"]}</span>'
+            f'</div>'
+            f'<h3 class="ex-title">{item["title"]}</h3>'
+            f'<div class="ex-pair">'
+            f'<div class="ex-frame ex-bw">'
+            f'<img src="data:image/jpeg;base64,{b64_bw}" alt="{item["title"]} Monochrome" />'
+            f'<span class="ex-tag">Monochrome</span>'
+            f'</div>'
+            f'<div class="ex-frame ex-col">'
+            f'<img src="data:image/jpeg;base64,{b64_col}" alt="{item["title"]} Colorized" />'
+            f'<span class="ex-tag">Colorized</span>'
+            f'</div>'
+            f'</div>'
+            f'<p class="ex-cap">{item["caption"]}</p>'
+            f'</article>'
+        )
+        cards_html.append(card_str)
+
+    joined_cards = "".join(cards_html)
+    gallery_html = (
+        '<section class="exhibition-section">'
+        '<div class="exhibition-header">'
+        '<span class="exhibition-kicker">ARCHIVAL EXHIBITION SUPPLEMENT</span>'
+        '<h2 class="exhibition-h2">Selected Monochrome &amp; Restored Plates</h2>'
+        '<p class="exhibition-deck">Side-by-side comparison of archival sample photographs restored through domain-calibrated CIE L*a*b* neural inference.</p>'
+        '</div>'
+        f'<div class="exhibition-grid">{joined_cards}</div>'
+        '</section>'
+    )
+    st.markdown(gallery_html, unsafe_allow_html=True)
 
 
 def render_cielab_inspector(colorized_rgb: np.ndarray):
@@ -249,12 +314,15 @@ def render_cielab_inspector(colorized_rgb: np.ndarray):
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.markdown('<h2 class="serif-sub">1. Kanal L* (Luminansi)</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="serif-sub">1. L* Channel (Luminance)</h2>', unsafe_allow_html=True)
         st.image(L_channel, use_container_width=True, clamp=True)
-        st.markdown('<p class="plate-cap">Intensitas cahaya hitam-putih (0–100) yang mempertahankan struktur tepi asli.</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="plate-cap">Monochrome lightness intensity (0–100) preserving 100% of original edge geometry.</p>',
+            unsafe_allow_html=True,
+        )
 
     with col2:
-        st.markdown('<h2 class="serif-sub">2. Kanal a* (Hijau–Merah)</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="serif-sub">2. a* Channel (Green–Red)</h2>', unsafe_allow_html=True)
         fig, ax = plt.subplots(figsize=(4, 4 * L_channel.shape[0] / max(1, L_channel.shape[1])), dpi=110)
         fig.patch.set_facecolor("#F2F1ED")
         ax.imshow(a_channel, cmap="RdYlGn_r", vmin=45, vmax=210)
@@ -262,10 +330,13 @@ def render_cielab_inspector(colorized_rgb: np.ndarray):
         fig.tight_layout(pad=0)
         st.pyplot(fig, use_container_width=True)
         plt.close(fig)
-        st.markdown('<p class="plate-cap">Peta kroma sumbu a*: nilai rendah menuju hijau, nilai tinggi menuju merah.</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="plate-cap">Chrominance map along the a* axis: lower values shift toward green, higher toward crimson.</p>',
+            unsafe_allow_html=True,
+        )
 
     with col3:
-        st.markdown('<h2 class="serif-sub">3. Kanal b* (Biru–Kuning)</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="serif-sub">3. b* Channel (Blue–Yellow)</h2>', unsafe_allow_html=True)
         fig, ax = plt.subplots(figsize=(4, 4 * L_channel.shape[0] / max(1, L_channel.shape[1])), dpi=110)
         fig.patch.set_facecolor("#F2F1ED")
         ax.imshow(b_channel, cmap="coolwarm", vmin=45, vmax=210)
@@ -273,7 +344,10 @@ def render_cielab_inspector(colorized_rgb: np.ndarray):
         fig.tight_layout(pad=0)
         st.pyplot(fig, use_container_width=True)
         plt.close(fig)
-        st.markdown('<p class="plate-cap">Peta kroma sumbu b*: nilai rendah menuju biru, nilai tinggi menuju kuning.</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="plate-cap">Chrominance map along the b* axis: lower values shift toward cerulean blue, higher toward warm gold.</p>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_chroma_scatter(colorized_rgb: np.ndarray):
@@ -297,9 +371,9 @@ def render_chroma_scatter(colorized_rgb: np.ndarray):
 
     ax.set_xlim(-85, 85)
     ax.set_ylim(-85, 85)
-    ax.set_xlabel("Sumbu a* (Hijau ←  → Merah)", color="#000000", fontsize=9, fontweight="bold")
-    ax.set_ylabel("Sumbu b* (Biru ←  → Kuning)", color="#000000", fontsize=9, fontweight="bold")
-    ax.set_title("Sebaran Spektrum Kroma CIE a*b*", color="#000000", fontsize=10, fontweight="bold", pad=10)
+    ax.set_xlabel("a* Axis (Green ←  → Red)", color="#000000", fontsize=9, fontweight="bold")
+    ax.set_ylabel("b* Axis (Blue ←  → Yellow)", color="#000000", fontsize=9, fontweight="bold")
+    ax.set_title("CIE a*b* Chromaticity Gamut Distribution", color="#000000", fontsize=10, fontweight="bold", pad=10)
     ax.tick_params(colors="#4A4A47", labelsize=8)
     for spine in ax.spines.values():
         spine.set_color("#000000")
