@@ -1,8 +1,9 @@
 """
-WarnaIn - Utility Functions
-Handles high-precision float32 CIE Lab <-> RGB conversions, aspect-ratio-aware
-tensor transformations, saturation degradation experiments, category-specific
-chrominance calibration, and quantitative metrics (PSNR, SSIM, MAE).
+WarnaIn v3 - Utility Functions (CIE L*a*b* [-1, 1] Standardized Pipeline)
+Handles high-precision float32 CIE L*a*b* <-> RGB conversions, standardized
+[-1, 1] tensor normalization for (B, 1, 224, 224) inputs and (B, 2, 224, 224)
+outputs, saturation degradation experiments, category chrominance priors,
+and quantitative metrics (PSNR, SSIM, MAE on ab & RGB).
 """
 
 import numpy as np
@@ -15,8 +16,8 @@ from PIL import Image
 def rgb_to_lab(rgb_image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     Converts an RGB image (uint8 [0, 255]) to normalized float32 CIE Lab channels:
-    - L_norm: shape (H, W, 1), float32 in [0, 1] (representing L* in [0, 100])
-    - ab_norm: shape (H, W, 2), float32 in [-1, 1] (representing a*, b* in [-128, 128])
+    - L_norm: shape (H, W, 1), float32 in [-1, 1] (mapped from L* in [0, 100])
+    - ab_norm: shape (H, W, 2), float32 in [-1, 1] (mapped from a*, b* in [-128, 128])
     """
     if rgb_image.dtype != np.uint8:
         rgb_image = np.clip(rgb_image, 0, 255).astype(np.uint8)
@@ -24,16 +25,17 @@ def rgb_to_lab(rgb_image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     rgb_float = rgb_image.astype(np.float32) / 255.0
     lab_float = cv2.cvtColor(rgb_float, cv2.COLOR_RGB2Lab)
 
-    L_norm = np.clip(lab_float[:, :, 0:1] / 100.0, 0.0, 1.0).astype(np.float32)
+    # Standardize L* [0, 100] -> [-1, 1] and a*b* [-128, 128] -> [-1, 1]
+    L_norm = np.clip((lab_float[:, :, 0:1] / 50.0) - 1.0, -1.0, 1.0).astype(np.float32)
     ab_norm = np.clip(lab_float[:, :, 1:3] / 128.0, -1.0, 1.0).astype(np.float32)
 
     return L_norm, ab_norm
 
 
-def lab_to_rgb(L_norm: np.ndarray, ab_norm: np.ndarray) -> np.ndarray:
+def lab_to_rgb(L_norm: np.ndarray, ab_norm: np.ndarray, l_range: str = "neg1_1") -> np.ndarray:
     """
     Reconstructs an RGB image from normalized CIE Lab channels:
-    - L_norm: shape (H, W, 1) or (H, W), float32 in [0, 1]
+    - L_norm: shape (H, W, 1) or (H, W), float32 in [-1, 1] (or [0, 1] if l_range='0_1')
     - ab_norm: shape (H, W, 2), float32 in [-1, 1]
 
     Returns:
@@ -42,7 +44,11 @@ def lab_to_rgb(L_norm: np.ndarray, ab_norm: np.ndarray) -> np.ndarray:
     if L_norm.ndim == 2:
         L_norm = L_norm[:, :, np.newaxis]
 
-    L_true = np.clip(L_norm.astype(np.float32) * 100.0, 0.0, 100.0)
+    if l_range == "0_1":
+        L_true = np.clip(L_norm.astype(np.float32) * 100.0, 0.0, 100.0)
+    else:
+        L_true = np.clip((L_norm.astype(np.float32) + 1.0) * 50.0, 0.0, 100.0)
+
     ab_true = np.clip(ab_norm.astype(np.float32) * 128.0, -127.0, 127.0)
 
     lab_float = np.concatenate([L_true, ab_true], axis=2).astype(np.float32)
@@ -52,7 +58,7 @@ def lab_to_rgb(L_norm: np.ndarray, ab_norm: np.ndarray) -> np.ndarray:
 
 
 def tensor_to_rgb(L_tensor: torch.Tensor, ab_tensor: torch.Tensor) -> np.ndarray:
-    """Converts PyTorch tensors back to RGB numpy array."""
+    """Converts PyTorch tensors L (B,1,H,W) in [-1,1] and ab (B,2,H,W) in [-1,1] to RGB uint8."""
     if L_tensor.ndim == 4:
         L_tensor = L_tensor.squeeze(0)
     if ab_tensor.ndim == 4:
@@ -61,18 +67,19 @@ def tensor_to_rgb(L_tensor: torch.Tensor, ab_tensor: torch.Tensor) -> np.ndarray
     L_np = L_tensor.detach().cpu().numpy().transpose(1, 2, 0)
     ab_np = ab_tensor.detach().cpu().numpy().transpose(1, 2, 0)
 
-    return lab_to_rgb(L_np, ab_np)
+    return lab_to_rgb(L_np, ab_np, l_range="neg1_1")
 
 
 def image_to_tensor(
     image: Union[np.ndarray, Image.Image],
-    target_size: Optional[Tuple[int, int]] = (256, 256),
-    preserve_aspect: bool = True,
+    target_size: Optional[Tuple[int, int]] = (224, 224),
+    preserve_aspect: bool = False,
 ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[int, int]]:
     """
-    Preprocesses an input image (RGB) into normalized L and ab PyTorch tensors.
-    When preserve_aspect=True, scales the shorter side to target_size[0] (rounded to multiple of 8)
-    so portrait/landscape anatomy is never squished.
+    Preprocesses an input RGB image into normalized L* and a*b* PyTorch tensors:
+    - L_tensor: (1, 1, H, W) in [-1, 1] (default 224x224 per v3 specification)
+    - ab_tensor: (1, 2, H, W) in [-1, 1]
+    - original_size: (orig_W, orig_H)
     """
     if isinstance(image, Image.Image):
         original_size = image.size  # (W, H)
@@ -86,22 +93,21 @@ def image_to_tensor(
         if preserve_aspect and orig_w > 0 and orig_h > 0:
             short_target = min(target_size[0], target_size[1])
             scale = short_target / float(min(orig_w, orig_h))
-            new_w = max(8, int(round((orig_w * scale) / 8.0) * 8))
-            new_h = max(8, int(round((orig_h * scale) / 8.0) * 8))
-            # Cap maximum dimension to prevent excessive CPU latency
+            new_w = max(32, int(round((orig_w * scale) / 32.0) * 32))
+            new_h = max(32, int(round((orig_h * scale) / 32.0) * 32))
             max_dim = short_target * 2
             if new_w > max_dim or new_h > max_dim:
                 cap_scale = max_dim / float(max(new_w, new_h))
-                new_w = max(8, int(round((new_w * cap_scale) / 8.0) * 8))
-                new_h = max(8, int(round((new_h * cap_scale) / 8.0) * 8))
+                new_w = max(32, int(round((new_w * cap_scale) / 32.0) * 32))
+                new_h = max(32, int(round((new_h * cap_scale) / 32.0) * 32))
             img_np = cv2.resize(img_np, (new_w, new_h), interpolation=cv2.INTER_AREA)
         else:
             img_np = cv2.resize(img_np, target_size, interpolation=cv2.INTER_AREA)
 
-    L, ab = rgb_to_lab(img_np)
+    L_norm, ab_norm = rgb_to_lab(img_np)
 
-    L_tensor = torch.from_numpy(L.transpose(2, 0, 1)).unsqueeze(0).float()
-    ab_tensor = torch.from_numpy(ab.transpose(2, 0, 1)).unsqueeze(0).float()
+    L_tensor = torch.from_numpy(L_norm.transpose(2, 0, 1)).unsqueeze(0).float()
+    ab_tensor = torch.from_numpy(ab_norm.transpose(2, 0, 1)).unsqueeze(0).float()
 
     return L_tensor, ab_tensor, original_size
 
@@ -112,64 +118,51 @@ def apply_category_chroma_prior(
     category: str = "general",
 ) -> np.ndarray:
     """
-    Applies domain-specific CIE Lab chrominance refinement based on the selected semantic category:
-    - 'general': Unmodified baseline prediction.
-    - 'animals': Suppresses false blue/cyan clothing hallucinations in shadowed fur/foreground,
-                 restores warm organic fur/skin tones and delicate pink nose/ear chrominance.
-    - 'architecture': Enhances crisp sky clarity behind structures, restores natural warmth to
-                      masonry/brick/wood/stone facades, and balances neutral concrete/metal highlights.
-    - 'landscapes': Enhances sky-water-foliage chromatic separation and natural horizon gradients.
-    - 'portraits': Calibrates skin-tone locus in CIE a*b* and prevents cold/greenish cast on skin.
-    - 'objects': Boosts chromatic contrast and suppresses muddy mid-tone desaturation on products.
+    Applies domain-specific CIE Lab chrominance refinement.
+    Handles L_norm in [-1, 1] seamlessly by mapping internal luminance mask to [0, 1].
     """
     cat = (category or "general").lower()
     if cat == "general":
         return ab_norm
 
-    lum = L_norm[:, :, 0] if L_norm.ndim == 3 else L_norm
+    raw_l = L_norm[:, :, 0] if L_norm.ndim == 3 else L_norm
+    # Convert L from [-1, 1] to [0, 1] for luminance zone masks
+    lum = np.clip((raw_l + 1.0) * 0.5, 0.0, 1.0)
     h, w = lum.shape
     a = ab_norm[:, :, 0].copy()
     b = ab_norm[:, :, 1].copy()
 
     if cat == "animals":
-        # 1. Suppress false negative b* (blue/cyan clothing hallucination) on fur & hands
         false_blue_mask = b < 0.0
         b[false_blue_mask] = b[false_blue_mask] * 0.15 + 0.04 * (1.0 - lum[false_blue_mask])
 
-        # 2. Warm organic fur & skin locus in mid-to-dark luminance (0.12 .. 0.72)
         fur_mask = np.clip(1.0 - np.abs(lum - 0.45) / 0.38, 0.0, 1.0)
         b = b + fur_mask * 0.08
         a = a + fur_mask * 0.035
 
-        # 3. Delicate pink/warmth preservation on mid-bright central facial features (nose/ears)
         yy, xx = np.ogrid[:h, :w]
         center_weight = np.exp(-(((yy - h * 0.42) / (h * 0.28)) ** 2 + ((xx - w * 0.5) / (w * 0.28)) ** 2))
         nose_tone = (lum > 0.45) & (lum < 0.82)
         a = a + center_weight * nose_tone * 0.045
 
-        # 4. Keep bright white fur (L* > 0.82) clean and neutral
         white_fur = np.clip((lum - 0.80) / 0.20, 0.0, 1.0)
         a = a * (1.0 - 0.45 * white_fur)
         b = b * (1.0 - 0.35 * white_fur)
 
     elif cat == "architecture":
-        # 1. Clean sky clarity: boost natural blue/cyan for open sky behind buildings
         sky_blue = (b < -0.02) & (lum > 0.35)
         b[sky_blue] = b[sky_blue] * 1.15
 
-        # 2. Natural warmth for masonry, brick, wood, and stone facade midtones (0.20 < lum < 0.75)
         facade_lum = np.clip(1.0 - np.abs(lum - 0.48) / 0.35, 0.0, 1.0)
         warm_facade = (a > -0.02) & (b > -0.02)
         a[warm_facade] = a[warm_facade] + facade_lum[warm_facade] * 0.035
         b[warm_facade] = b[warm_facade] + facade_lum[warm_facade] * 0.045
 
-        # 3. Suppress muddy green/purple casts on neutral highlights/concrete (lum > 0.78)
         bright_neutral = lum > 0.78
         a[bright_neutral] = a[bright_neutral] * 0.85
         b[bright_neutral] = b[bright_neutral] * 0.90
 
     elif cat == "landscapes":
-        # Enhance natural sky/water blues (b* < 0) and foliage greens (a* < 0, b* > 0)
         blue_mask = b < -0.02
         b[blue_mask] = b[blue_mask] * 1.18
         green_mask = (a < 0.0) & (b > 0.0)
@@ -177,7 +170,6 @@ def apply_category_chroma_prior(
         b[green_mask] = b[green_mask] * 1.12
 
     elif cat == "portraits":
-        # Suppress cold/greenish cast on skin and gently reinforce warm skin-tone locus
         cold_mask = b < 0.0
         b[cold_mask] = b[cold_mask] * 0.55
         green_cast = a < -0.02
@@ -187,7 +179,6 @@ def apply_category_chroma_prior(
         b = b + skin_lum * 0.05
 
     elif cat == "objects":
-        # Non-linear chroma contrast expansion to counter regression-to-the-mean desaturation
         chroma_mag = np.sqrt(a ** 2 + b ** 2) + 1e-6
         boost = np.power(np.clip(chroma_mag / 0.5, 0.0, 2.0), -0.22)
         boost = np.clip(boost, 1.0, 1.45)
@@ -233,8 +224,17 @@ def calculate_psnr(img1: np.ndarray, img2: np.ndarray) -> float:
     return float(20.0 * np.log10(255.0 / np.sqrt(mse)))
 
 
-def calculate_mae(img1: np.ndarray, img2: np.ndarray) -> float:
-    """Calculates Mean Absolute Error (MAE) in [0, 255]."""
+def calculate_mae(img1: np.ndarray, img2: np.ndarray, on_ab: bool = True) -> float:
+    """
+    Calculates Mean Absolute Error (MAE).
+    If on_ab=True, computes MAE on the CIE a*b* chrominance channels in scale [0, 128]
+    as specified in the v3 benchmark guidelines.
+    """
+    if on_ab and img1.ndim == 3 and img2.ndim == 3:
+        _, ab1 = rgb_to_lab(img1)
+        _, ab2 = rgb_to_lab(img2)
+        # Scale normalized [-1, 1] difference to CIE Lab chrominance units [0, 128]
+        return float(np.mean(np.abs(ab1 - ab2)) * 128.0)
     return float(np.mean(np.abs(img1.astype(np.float32) - img2.astype(np.float32))))
 
 
@@ -286,13 +286,14 @@ def simulate_colorization_preview(rgb_or_gray: np.ndarray, warmth: float = 0.0, 
         gray = cv2.cvtColor(rgb_or_gray, cv2.COLOR_RGB2GRAY)
 
     h, w = gray.shape
-    lum = gray.astype(np.float32) / 255.0
+    lum_01 = gray.astype(np.float32) / 255.0
+    lum_neg1_1 = lum_01 * 2.0 - 1.0
     y_grad = np.tile(np.linspace(1.0, 0.0, h)[:, np.newaxis], (1, w))
 
-    a_pred = np.sin(lum * np.pi) * 0.12 + (warmth * 0.15)
-    b_pred = (lum - 0.4) * 0.25 + (warmth * 0.12)
-    sky_mask = (y_grad > 0.5) & (lum > 0.45)
+    a_pred = np.sin(lum_01 * np.pi) * 0.12 + (warmth * 0.15)
+    b_pred = (lum_01 - 0.4) * 0.25 + (warmth * 0.12)
+    sky_mask = (y_grad > 0.5) & (lum_01 > 0.45)
     b_pred[sky_mask] -= (y_grad[sky_mask] - 0.5) * 0.35
 
     ab_pred = np.clip(np.stack([a_pred * vibrancy, b_pred * vibrancy], axis=2), -1.0, 1.0).astype(np.float32)
-    return lab_to_rgb(lum[:, :, np.newaxis], ab_pred)
+    return lab_to_rgb(lum_neg1_1[:, :, np.newaxis], ab_pred)

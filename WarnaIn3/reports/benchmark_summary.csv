@@ -1,0 +1,4 @@
+Engine_Key,Model_Name,Paradigm,Test_Images,PSNR_dB,PSNR_Std,SSIM,SSIM_Std,MAE_ab,MAE_Std,Latency_ms,Karakteristik_Visual_LO3_LO4
+resnet_unet,CNN: ResNet-18 U-Net,Pixel Regression (Smooth L1 + MSE),500,24.23,4.12,0.9229,0.0633,8.01,4.09,115.51,"Struktur tepi tajam, warna konservatif/aman (regression-to-the-mean)"
+pix2pix,GAN: Pix2Pix cGAN,Adversarial Learning (U-Net + PatchGAN 70x70),500,22.76,3.86,0.9034,0.0726,9.15,4.03,115.36,"Warna vibrant & berani, kontras kromatik tinggi, risiko artefak minor"
+transformer,Transformer: Swin-UNet,Windowed Multi-Head Self-Attention (W-MSA),500,23.92,3.94,0.9182,0.0646,8.23,3.93,180.94,Konsistensi semantik global terbaik & koherensi warna jarak jauh

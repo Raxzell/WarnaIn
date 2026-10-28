@@ -1,10 +1,11 @@
 """
-WarnaIn - Editorial Broadsheet UI Components for Streamlit
-Implements the visual design from assets/warnain_design.html in Editorial English:
-- Broadsheet Before-After Comparison (.cmp, halftone before, sharp rectangular tags, ⇆ handle, serif figcaption)
+WarnaIn v3 - Editorial Broadsheet UI Components for Streamlit
+Includes:
+- Broadsheet Before-After Comparison (.cmp, halftone before, sharp rectangular tags, ⇆ handle)
 - Editorial Stats Strip (.stats with Old Standard TT 2rem numerals & hairline dividers)
-- CIE Lab Technical Plates & Chromaticity Plot matching --sheet (#F2F1ED) and --ink (#000)
-- Editorial Exhibition Plate Gallery showcasing side-by-side archival restorations.
+- Head-to-Head 3-Model Compact Metric Badges & LO3/LO4 Paradigm Insight Cards
+- CIE Lab Technical Plates & Chromaticity Plot
+- Editorial Exhibition Plate Gallery
 """
 
 import io
@@ -45,11 +46,10 @@ def render_before_after_slider(
     max_height: int = 500,
 ):
     """
-    Renders the exact editorial comparison figure (.cmp + figcaption) from warnain_design.html.
+    Renders the exact editorial comparison figure (.cmp + figcaption).
     """
     h, w = img_after.shape[:2]
     aspect_ratio = w / max(1, h)
-    # Match the ~820px lead column width in warnain_design.html
     cmp_height = int(min(max_height, max(320, 780 / aspect_ratio)))
 
     b64_before = image_to_base64(img_before)
@@ -223,11 +223,11 @@ def _fmt_num(val: float, decimals: int = 1) -> str:
 
 def render_metric_cards(psnr: float, ssim: float, mae: float, latency_ms: float = 0.0):
     """
-    Renders the editorial .stats strip from warnain_design.html.
+    Renders the editorial .stats strip.
     """
     psnr_str = _fmt_num(psnr, 1)
-    ssim_str = _fmt_num(ssim, 2)
-    mae_str = _fmt_num(mae, 1)
+    ssim_str = _fmt_num(ssim, 3)
+    mae_str = _fmt_num(mae, 2)
     lat_str = f"{int(round(latency_ms))}"
 
     st.markdown(
@@ -235,8 +235,93 @@ def render_metric_cards(psnr: float, ssim: float, mae: float, latency_ms: float 
         <div class="stats" aria-label="Quantitative Metrics">
           <div class="stat"><b>{psnr_str}</b><span>PSNR (dB)</span></div>
           <div class="stat"><b>{ssim_str}</b><span>SSIM</span></div>
-          <div class="stat"><b>{mae_str}</b><span>MAE</span></div>
+          <div class="stat"><b>{mae_str}</b><span>MAE (a*b*)</span></div>
           <div class="stat"><b>{lat_str}</b><span>Inference Time (ms)</span></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_compact_model_metrics(psnr: float, ssim: float, mae: float, latency_ms: float):
+    """
+    Renders a compact broadsheet metric table beneath each model column in the
+    4-Column Head-to-Head Comparison view.
+    """
+    st.markdown(
+        f"""
+        <div style="border-top:1px solid #000;border-bottom:1px solid #000;padding:6px 0;margin-top:6px;font-size:12px;">
+          <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #B9B8B2;">
+            <span style="color:#4A4A47;">PSNR</span>
+            <b style="font-family:'Old Standard TT',serif;font-size:13.5px;">{psnr:.2f} dB</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #B9B8B2;">
+            <span style="color:#4A4A47;">SSIM</span>
+            <b style="font-family:'Old Standard TT',serif;font-size:13.5px;">{ssim:.4f}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #B9B8B2;">
+            <span style="color:#4A4A47;">MAE (a*b*)</span>
+            <b style="font-family:'Old Standard TT',serif;font-size:13.5px;">{mae:.2f}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:2px 0;">
+            <span style="color:#4A4A47;">Latency</span>
+            <b style="font-family:'Old Standard TT',serif;font-size:13.5px;">{latency_ms:.1f} ms</b>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_paradigm_insight_cards():
+    """
+    Renders the 3 editorial insight cards analyzing LO3 (Model Behavior) &
+    LO4 (Deep Learning Paradigm Limitations) below the 4-column comparison.
+    """
+    st.markdown(
+        """
+        <div style="margin-top:22px;border-top:4px double #000;padding-top:14px;">
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#4A4A47;">
+            ARCHITECTURAL BEHAVIOR &amp; LIMITATION ANALYSIS (LO3 &amp; LO4)
+          </span>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:10px;border-top:1px solid #000;border-bottom:1px solid #000;">
+            <div style="padding:12px 16px 12px 0;">
+              <h3 style="font-family:'Old Standard TT',serif;font-size:1.12rem;font-weight:700;margin:0 0 6px 0;">
+                1. CNN: ResNet-18 U-Net
+              </h3>
+              <p style="font-size:12.5px;color:#4A4A47;margin:0 0 6px 0;font-weight:600;">
+                Paradigma: Direct Pixel Regression (Smooth L1 + MSE)
+              </p>
+              <p style="font-family:'Old Standard TT',serif;font-size:0.95rem;line-height:1.5;margin:0;">
+                <b>Karakteristik:</b> Struktur tepi objek sangat tajam berkat <i>multi-scale skip connections</i>.<br>
+                <b>Limitasi (LO4):</b> Mengalami efek <i>regression-to-the-mean</i> pada objek multimodal sehingga saturasi warna cenderung lebih konservatif/aman (pastel/sepia).
+              </p>
+            </div>
+            <div style="padding:12px 16px;border-left:1px solid #B9B8B2;">
+              <h3 style="font-family:'Old Standard TT',serif;font-size:1.12rem;font-weight:700;margin:0 0 6px 0;">
+                2. GAN: Pix2Pix cGAN
+              </h3>
+              <p style="font-size:12.5px;color:#4A4A47;margin:0 0 6px 0;font-weight:600;">
+                Paradigma: Adversarial Learning (U-Net + PatchGAN 70×70)
+              </p>
+              <p style="font-family:'Old Standard TT',serif;font-size:0.95rem;line-height:1.5;margin:0;">
+                <b>Karakteristik:</b> Discriminator PatchGAN mendorong generator menghasilkan warna yang jauh lebih <i>vibrant</i>, berani, dan kontras tinggi.<br>
+                <b>Limitasi (LO4):</b> Rentan terhadap ketidakstabilan adversarial yang dapat memicu risiko artefak mikro atau <i>color bleeding</i> pada batas frekuensi tinggi.
+              </p>
+            </div>
+            <div style="padding:12px 0 12px 16px;border-left:1px solid #B9B8B2;">
+              <h3 style="font-family:'Old Standard TT',serif;font-size:1.12rem;font-weight:700;margin:0 0 6px 0;">
+                3. Transformer: Swin-UNet
+              </h3>
+              <p style="font-size:12.5px;color:#4A4A47;margin:0 0 6px 0;font-weight:600;">
+                Paradigma: Windowed Multi-Head Self-Attention (W-MSA)
+              </p>
+              <p style="font-family:'Old Standard TT',serif;font-size:0.95rem;line-height:1.5;margin:0;">
+                <b>Karakteristik:</b> Mekanisme <i>Self-Attention</i> menangkap dependensi spasial jarak jauh sehingga konsistensi semantik global paling koheren.<br>
+                <b>Limitasi (LO4):</b> Kompleksitas komputasi kuadratik pada window attention membutuhkan waktu inferensi (latency) dan memori lebih besar.
+              </p>
+            </div>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -246,15 +331,6 @@ def render_metric_cards(psnr: float, ssim: float, mae: float, latency_ms: float 
 def render_exhibition_gallery(plates: list):
     """
     Renders an Editorial Exhibition Plate gallery at the bottom of the Studio page.
-    Each item in `plates` is a dict:
-      {
-        "plate_no": "PLATE I",
-        "title": "Vintage Portrait",
-        "category": "Human Portraits",
-        "before_rgb": np.ndarray,
-        "after_rgb": np.ndarray,
-        "caption": str,
-      }
     """
     if not plates:
         return
@@ -317,7 +393,7 @@ def render_cielab_inspector(colorized_rgb: np.ndarray):
         st.markdown('<h2 class="serif-sub">1. L* Channel (Luminance)</h2>', unsafe_allow_html=True)
         st.image(L_channel, use_container_width=True, clamp=True)
         st.markdown(
-            '<p class="plate-cap">Monochrome lightness intensity (0–100) preserving 100% of original edge geometry.</p>',
+            '<p class="plate-cap">Monochrome lightness intensity (0–100, normalized to [-1, 1] for model input) preserving 100% of original edge geometry.</p>',
             unsafe_allow_html=True,
         )
 
