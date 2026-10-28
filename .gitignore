@@ -27,6 +27,9 @@ ENV/
 # Temporary test images & extra assets
 tes.*
 tes*
+assets/Expected/
+assets/Hasil/
+assets/sample_images/sample *
 assets/sample_images/jadul*
 assets/sample_images/pexels*
 assets/sample_images/unsplash_*
